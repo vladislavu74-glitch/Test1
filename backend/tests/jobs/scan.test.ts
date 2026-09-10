@@ -1,15 +1,10 @@
-// Отдельная тестовая SQLite-база и мок nodemailer должны быть настроены ДО
-// того, как что-либо в проекте импортирует src/db/client или src/mail/mailer
-// (ts-jest не хоистит jest.mock/присваивания так, как это делает babel-jest,
-// поэтому порядок операторов в файле важен).
+// Отдельная тестовая SQLite-база должна быть настроена ДО того, как
+// что-либо в проекте импортирует src/db/client (ts-jest не хоистит
+// jest.mock/присваивания так, как это делает babel-jest, поэтому порядок
+// операторов в файле важен).
 process.env.DATABASE_URL = 'file:./test-scan.sqlite';
 process.env.API_AUTH_TOKEN = 'test-token';
-
-const sendMailMock = jest.fn().mockResolvedValue(undefined);
-jest.mock('nodemailer', () => ({
-  __esModule: true,
-  default: { createTransport: jest.fn(() => ({ sendMail: sendMailMock })) },
-}));
+process.env.RESEND_API_KEY = 'test-resend-key';
 
 import { execSync } from 'child_process';
 import fs from 'fs';
@@ -36,14 +31,17 @@ beforeAll(() => {
   connectorRegistry[fakeConnector.key] = fakeConnector;
 });
 
+const originalFetch = global.fetch;
+
 afterAll(async () => {
+  global.fetch = originalFetch;
   await prisma.$disconnect();
   fs.rmSync(testDbPath, { force: true });
 });
 
 beforeEach(async () => {
   fakeVacancies = [];
-  sendMailMock.mockClear();
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '' } as Response);
   await prisma.notificationLog.deleteMany();
   await prisma.vacancyState.deleteMany();
   await prisma.vacancy.deleteMany();
@@ -78,7 +76,7 @@ describe('runScan', () => {
 
     expect(result.newVacancyCount).toBe(1);
     expect(result.emailSent).toBe(false);
-    expect(sendMailMock).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
 
     const vacancy = await prisma.vacancy.findFirst({ include: { state: true } });
     expect(vacancy?.state?.hidden).toBe(false);
@@ -105,7 +103,11 @@ describe('runScan', () => {
     const result = await runScan('cron');
 
     expect(result.emailSent).toBe(true);
-    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.resend.com/emails',
+      expect.objectContaining({ method: 'POST' }),
+    );
 
     const notified = await prisma.notificationLog.findMany();
     expect(notified).toHaveLength(1);
@@ -116,12 +118,12 @@ describe('runScan', () => {
       { externalId: 'v1', title: 'iOS Developer', url: 'https://example.com/v1', publishedAt: new Date('2024-01-01') },
     ];
     await runScan('cron');
-    sendMailMock.mockClear();
+    (global.fetch as jest.Mock).mockClear();
 
     const secondRun = await runScan('cron');
 
     expect(secondRun.emailSent).toBe(false);
-    expect(sendMailMock).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('keeps a hidden vacancy hidden across scans and excludes it from notification', async () => {

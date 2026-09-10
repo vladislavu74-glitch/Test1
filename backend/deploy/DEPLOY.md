@@ -28,35 +28,62 @@ ssh root@178.217.98.225
 ## Шаг 2. Установка backend'а — один блок команд
 
 Репозиторий `vladislavu74-glitch/Test1` публичный, `git clone` работает
-без токена. Подставьте свои значения для SMTP (см. ниже, где их взять) и
-выполните на сервере:
+без токена. Письма отправляются через [Resend](https://resend.com/api-keys)
+(HTTPS API), а не через прямой SMTP — многие VPS (в т.ч. эта) по умолчанию
+блокируют исходящие SMTP-порты 25/465/587 как антиспам-меру, порт 443
+почти никогда не блокируется. Зарегистрируйтесь на resend.com, создайте
+API-ключ (Dashboard → API Keys) и подставьте его ниже:
 
 ```bash
 export GIT_URL="https://github.com/vladislavu74-glitch/Test1.git"
 export GIT_BRANCH="claude/ios-job-monitoring-app-3j1ae5"
 export API_AUTH_TOKEN="$(openssl rand -hex 32)"
-export SMTP_HOST="mail.hosting.reg.ru"
-export SMTP_PORT="465"
-export SMTP_SECURE="true"
-export SMTP_USER="v_utkin@castleduck.com"
-export SMTP_PASS="ВАШ_ПАРОЛЬ_ОТ_ПОЧТЫ"
-export MAIL_FROM="Vlad Utkin <v_utkin@castleduck.com>"
+export RESEND_API_KEY="re_ВАШ_КЛЮЧ"
+export MAIL_FROM="Job Monitor <onboarding@resend.dev>"
 
 curl -fsSL "https://raw.githubusercontent.com/vladislavu74-glitch/Test1/${GIT_BRANCH}/backend/deploy/setup.sh" -o setup.sh
 bash setup.sh
 echo "Ваш API_AUTH_TOKEN: $API_AUTH_TOKEN"   # впишите это значение в приложении, во вкладке Настройки
 ```
 
+`onboarding@resend.dev` как `MAIL_FROM` работает сразу, без верификации
+домена, и может отправлять на любой адрес — этого достаточно для личного
+дайджеста. Если позже верифицируете свой домен в Resend (Dashboard →
+Domains, несколько DNS-записей), можно сменить на
+`Job Monitor <digest@ваш-домен.ру>`.
+
 Скрипт: ставит Node.js 22, клонирует репозиторий в `/opt/jobmonitor`,
-заполняет `.env` (включая SMTP, если переменные заданы), накатывает
+заполняет `.env` (включая Resend, если переменные заданы), накатывает
 миграции и seed, собирает проект, поднимает systemd-сервис `jobmonitor`,
 открывает порт `4000` через ufw для проверки по IP, сам проверяет
-health-эндпоинт и (если задан SMTP) сразу отправляет тестовое письмо —
-внизу вывода будет `SMTP OK` или текст ошибки.
+health-эндпоинт и (если задан `RESEND_API_KEY`) сразу отправляет тестовое
+письмо — внизу вывода будет `Resend OK` или текст ошибки.
 
 `API_AUTH_TOKEN` генерируется заново на сервере командой в блоке выше —
 он не хранится в репозитории. Запишите значение, которое скрипт выведет в
 конце — оно понадобится в приложении.
+
+### Сервер уже развёрнут, нужно только добавить Resend
+
+Если backend уже поднят (как сейчас) и осталось только настроить отправку
+писем — SMTP-переменные в `.env` больше не используются, добавьте Resend:
+
+```bash
+export RESEND_API_KEY="re_ВАШ_КЛЮЧ"
+sed -i \
+  -e "s#^RESEND_API_KEY=.*#RESEND_API_KEY=\"${RESEND_API_KEY}\"#" \
+  -e "s#^MAIL_FROM=.*#MAIL_FROM=\"Job Monitor <onboarding@resend.dev>\"#" \
+  /opt/jobmonitor/backend/.env
+grep -q '^RESEND_API_KEY=' /opt/jobmonitor/backend/.env || echo "RESEND_API_KEY=\"${RESEND_API_KEY}\"" >> /opt/jobmonitor/backend/.env
+systemctl restart jobmonitor
+
+curl -sS --max-time 15 -X POST 'https://api.resend.com/emails' \
+  -H "Authorization: Bearer ${RESEND_API_KEY}" \
+  -H 'Content-Type: application/json' \
+  -d '{"from":"Job Monitor <onboarding@resend.dev>","to":["V_utkin@castleduck.com"],"subject":"Job Monitor: проверка Resend","text":"Работает."}'
+```
+(`grep -q ... || echo ... >>` на случай, если в `.env` со старой версии
+скрипта ещё нет строки `RESEND_API_KEY` — тогда допишет её в конец файла.)
 
 ## Шаг 3. Проверка
 

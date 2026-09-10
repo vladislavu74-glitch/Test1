@@ -28,13 +28,19 @@ curl -H "Authorization: Bearer <API_AUTH_TOKEN из .env>" http://localhost:4000
 | `DATABASE_URL` | путь к SQLite-файлу |
 | `API_AUTH_TOKEN` | токен, которым iOS-приложение авторизуется в API |
 | `SUPERJOB_API_KEY` | ключ приложения SuperJob (зарегистрировать на api.superjob.ru) |
-| `SMTP_HOST/PORT/SECURE/USER/PASS` | доступ к почтовому серверу для отправки писем |
+| `RESEND_API_KEY` | ключ Resend (resend.com/api-keys) для отправки email-дайджеста |
 | `MAIL_FROM` / `MAIL_TO` | отправитель и получатель дайджеста (по умолчанию `V_utkin@castleduck.com`) |
 | `CRON_TZ` | таймзона ежедневного скана в 10:00 (по умолчанию `Europe/Moscow`) |
 | `PORT` | порт HTTP-сервера |
 
-Для Gmail в `SMTP_*` нужен **пароль приложения**
-(https://myaccount.google.com/apppasswords), а не обычный пароль аккаунта.
+Письма уходят через [Resend](https://resend.com) — HTTP API поверх порта
+443, а не прямой SMTP: многие VPS блокируют исходящие SMTP-порты
+(25/465/587) по умолчанию как антиспам-меру, порт 443 почти никогда не
+блокируется (см. `src/mail/mailer.ts`). Без верификации своего домена в
+Resend можно отправлять только с адреса `onboarding@resend.dev` (значение
+`MAIL_FROM` по умолчанию), зато на любой адрес получателя — этого
+достаточно для личного дайджеста. Верификация домена (Dashboard → Domains)
+позволяет отправлять с адреса на своём домене.
 
 ## Источники вакансий
 

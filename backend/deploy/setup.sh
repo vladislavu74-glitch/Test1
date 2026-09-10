@@ -8,12 +8,14 @@
 #   GIT_URL="https://github.com/vladislavu74-glitch/Test1.git" \
 #   GIT_BRANCH="claude/ios-job-monitoring-app-3j1ae5" \
 #   API_AUTH_TOKEN="..." \
-#   SMTP_HOST="..." SMTP_PORT="..." SMTP_SECURE="true|false" \
-#   SMTP_USER="..." SMTP_PASS="..." MAIL_FROM="..." \
+#   RESEND_API_KEY="..." MAIL_FROM="..." \
 #   bash setup.sh
 #
-# Все SMTP_*/MAIL_FROM переменные необязательны — если не заданы, .env
-# создаётся с пустыми значениями и их нужно будет дозаполнить вручную.
+# RESEND_API_KEY/MAIL_FROM необязательны — если не заданы, .env создаётся
+# с пустыми значениями и их нужно будет дозаполнить вручную. Письма шлются
+# через Resend (HTTPS-API, https://resend.com/api-keys), а не через прямой
+# SMTP — многие VPS блокируют исходящие SMTP-порты (25/465/587) по
+# умолчанию как антиспам-меру, порт 443 почти никогда не блокируется.
 set -euo pipefail
 
 APP_DIR="/opt/jobmonitor"
@@ -22,12 +24,8 @@ GIT_BRANCH="${GIT_BRANCH:-claude/ios-job-monitoring-app-3j1ae5}"
 API_AUTH_TOKEN="${API_AUTH_TOKEN:?Set API_AUTH_TOKEN to a long random string}"
 CRON_TZ="${CRON_TZ:-Europe/Moscow}"
 MAIL_TO="${MAIL_TO:-V_utkin@castleduck.com}"
-SMTP_HOST="${SMTP_HOST:-}"
-SMTP_PORT="${SMTP_PORT:-465}"
-SMTP_SECURE="${SMTP_SECURE:-true}"
-SMTP_USER="${SMTP_USER:-}"
-SMTP_PASS="${SMTP_PASS:-}"
-MAIL_FROM="${MAIL_FROM:-}"
+RESEND_API_KEY="${RESEND_API_KEY:-}"
+MAIL_FROM="${MAIL_FROM:-Job Monitor <onboarding@resend.dev>}"
 
 echo "== Обновление системы и установка базовых пакетов =="
 apt-get update
@@ -76,18 +74,12 @@ sed -i \
   -e "s#^CRON_TZ=.*#CRON_TZ=\"${CRON_TZ}\"#" \
   -e "s#^MAIL_TO=.*#MAIL_TO=\"${MAIL_TO}\"#" \
   .env
-if [[ -n "$SMTP_HOST" ]]; then
-  sed -i \
-    -e "s#^SMTP_HOST=.*#SMTP_HOST=\"${SMTP_HOST}\"#" \
-    -e "s#^SMTP_PORT=.*#SMTP_PORT=\"${SMTP_PORT}\"#" \
-    -e "s#^SMTP_SECURE=.*#SMTP_SECURE=\"${SMTP_SECURE}\"#" \
-    -e "s#^SMTP_USER=.*#SMTP_USER=\"${SMTP_USER}\"#" \
-    -e "s#^SMTP_PASS=.*#SMTP_PASS=\"${SMTP_PASS}\"#" \
-    -e "s#^MAIL_FROM=.*#MAIL_FROM=\"${MAIL_FROM}\"#" \
-    .env
-  echo "SMTP настроен из переданных переменных."
+sed -i -e "s#^MAIL_FROM=.*#MAIL_FROM=\"${MAIL_FROM}\"#" .env
+if [[ -n "$RESEND_API_KEY" ]]; then
+  sed -i -e "s#^RESEND_API_KEY=.*#RESEND_API_KEY=\"${RESEND_API_KEY}\"#" .env
+  echo "RESEND_API_KEY настроен из переданной переменной."
 else
-  echo "SMTP_* не переданы — заполните backend/.env вручную (nano $BACKEND_DIR/.env) перед тем, как ждать писем."
+  echo "RESEND_API_KEY не передан — заполните backend/.env вручную (nano $BACKEND_DIR/.env) перед тем, как ждать писем."
 fi
 chown jobmonitor:jobmonitor .env
 chmod 600 .env
@@ -117,30 +109,26 @@ echo "== Проверка health-эндпоинта =="
 sleep 1
 curl -sf http://localhost:4000/api/health && echo || echo "(не ответил — смотри journalctl -u jobmonitor -n 50)"
 
-if [[ -n "$SMTP_HOST" ]]; then
+if [[ -n "$RESEND_API_KEY" ]]; then
   echo
-  echo "== Тестовое письмо через настроенный SMTP =="
-  cat > "$BACKEND_DIR/.deploy-smtp-test.js" <<'JSEOF'
-require('dotenv').config();
-const nodemailer = require('nodemailer');
-const t = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: +process.env.SMTP_PORT,
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-});
-t.sendMail({
-  from: process.env.MAIL_FROM,
-  to: process.env.MAIL_TO,
-  subject: 'Job Monitor: сервер запущен',
-  text: 'Backend развёрнут и SMTP настроен.',
-})
-  .then(() => console.log('SMTP OK — письмо отправлено на', process.env.MAIL_TO))
-  .catch((e) => { console.error('SMTP FAIL:', e.message); process.exitCode = 1; });
-JSEOF
-  chmod 644 "$BACKEND_DIR/.deploy-smtp-test.js"
-  run_as_app "node .deploy-smtp-test.js" || echo "Если тут ошибка — пришлите её текст, поправим порт/шифрование."
-  rm -f "$BACKEND_DIR/.deploy-smtp-test.js"
+  echo "== Тестовое письмо через Resend =="
+  # --max-time ограничивает зависание, если исходящий 443 вдруг тоже
+  # заблокирован — тогда curl сам оборвётся через 15 секунд с ошибкой,
+  # а не будет висеть бесконечно.
+  resend_response=$(curl -sS --max-time 15 -w '\n%{http_code}' -X POST 'https://api.resend.com/emails' \
+    -H "Authorization: Bearer ${RESEND_API_KEY}" \
+    -H 'Content-Type: application/json' \
+    -d "$(cat <<JSON
+{"from":"${MAIL_FROM}","to":["${MAIL_TO}"],"subject":"Job Monitor: сервер запущен","text":"Backend развёрнут, отправка через Resend работает."}
+JSON
+)") || echo "curl не смог достучаться до api.resend.com — проверьте исходящий 443 и повторите вручную."
+  resend_status="${resend_response##*$'\n'}"
+  resend_body="${resend_response%$'\n'*}"
+  if [[ "$resend_status" == "200" ]]; then
+    echo "Resend OK — письмо отправлено на ${MAIL_TO}"
+  else
+    echo "Resend FAIL (HTTP ${resend_status}): ${resend_body}"
+  fi
 fi
 
 echo
