@@ -57,6 +57,12 @@ chown -R jobmonitor:jobmonitor "$APP_DIR"
 BACKEND_DIR="$APP_DIR/backend"
 cd "$BACKEND_DIR"
 
+# Минимальные образы Debian часто не имеют sudo — используем su, которое
+# гарантированно есть всегда, вместо sudo -u.
+run_as_app() {
+  su -s /bin/bash jobmonitor -c "cd '$BACKEND_DIR' && $*"
+}
+
 echo "== .env =="
 if [[ ! -f .env ]]; then
   cp .env.example .env
@@ -83,12 +89,12 @@ chown jobmonitor:jobmonitor .env
 chmod 600 .env
 
 echo "== Установка зависимостей и сборка =="
-sudo -u jobmonitor npm ci
-sudo -u jobmonitor npx prisma migrate deploy
-sudo -u jobmonitor npm run build
+run_as_app "npm ci"
+run_as_app "npx prisma migrate deploy"
+run_as_app "npm run build"
 
 echo "== Первичный seed источников (не перезаписывает существующие) =="
-sudo -u jobmonitor npm run seed
+run_as_app "npm run seed"
 
 echo "== systemd-сервис =="
 cp deploy/jobmonitor.service /etc/systemd/system/jobmonitor.service
@@ -110,14 +116,27 @@ curl -sf http://localhost:4000/api/health && echo || echo "(не ответил 
 if [[ -n "$SMTP_HOST" ]]; then
   echo
   echo "== Тестовое письмо через настроенный SMTP =="
-  sudo -u jobmonitor node -e "
-    require('dotenv').config();
-    const nodemailer = require('nodemailer');
-    const t = nodemailer.createTransport({host:process.env.SMTP_HOST, port:+process.env.SMTP_PORT, secure:process.env.SMTP_SECURE==='true', auth:{user:process.env.SMTP_USER, pass:process.env.SMTP_PASS}});
-    t.sendMail({from:process.env.MAIL_FROM, to:process.env.MAIL_TO, subject:'Job Monitor: сервер запущен', text:'Backend развёрнут и SMTP настроен.'})
-      .then(()=>console.log('SMTP OK — письмо отправлено на', process.env.MAIL_TO))
-      .catch(e=>{ console.error('SMTP FAIL:', e.message); process.exitCode = 1; });
-  " || echo "Если тут ошибка — пришлите её текст, поправим порт/шифрование."
+  cat > "$BACKEND_DIR/.deploy-smtp-test.js" <<'JSEOF'
+require('dotenv').config();
+const nodemailer = require('nodemailer');
+const t = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: +process.env.SMTP_PORT,
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+});
+t.sendMail({
+  from: process.env.MAIL_FROM,
+  to: process.env.MAIL_TO,
+  subject: 'Job Monitor: сервер запущен',
+  text: 'Backend развёрнут и SMTP настроен.',
+})
+  .then(() => console.log('SMTP OK — письмо отправлено на', process.env.MAIL_TO))
+  .catch((e) => { console.error('SMTP FAIL:', e.message); process.exitCode = 1; });
+JSEOF
+  chmod 644 "$BACKEND_DIR/.deploy-smtp-test.js"
+  run_as_app "node .deploy-smtp-test.js" || echo "Если тут ошибка — пришлите её текст, поправим порт/шифрование."
+  rm -f "$BACKEND_DIR/.deploy-smtp-test.js"
 fi
 
 echo

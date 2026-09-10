@@ -88,10 +88,10 @@ Let's Encrypt через certbot и закроет прямой доступ к 
 
 ```bash
 cd /opt/jobmonitor
-sudo -u jobmonitor git pull origin claude/ios-job-monitoring-app-3j1ae5
-cd backend
-sudo -u jobmonitor npm ci
-sudo -u jobmonitor npx prisma migrate deploy
-sudo -u jobmonitor npm run build
+su -s /bin/bash jobmonitor -c "cd /opt/jobmonitor && git pull origin claude/ios-job-monitoring-app-3j1ae5"
+su -s /bin/bash jobmonitor -c "cd /opt/jobmonitor/backend && npm ci && npx prisma migrate deploy && npm run build"
 systemctl restart jobmonitor
 ```
+
+(используем `su`, а не `sudo` — на минимальных образах Debian `sudo` может
+быть не установлен, `su` есть всегда.)
