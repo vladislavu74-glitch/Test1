@@ -10,6 +10,10 @@ DOMAIN="${DOMAIN:?Set DOMAIN to your hostname, e.g. jobs.example.com}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 APP_DIR="/opt/jobmonitor"
 
+echo "== Firewall: открываем 80/443 (нужно ДО certbot — иначе Let's Encrypt не сможет пройти HTTP-challenge) =="
+ufw allow 80/tcp
+ufw allow 443/tcp
+
 echo "== nginx reverse proxy для ${DOMAIN} =="
 sed "s/__DOMAIN__/${DOMAIN}/g" "$APP_DIR/backend/deploy/nginx-jobmonitor.conf.template" \
   > /etc/nginx/sites-available/jobmonitor
@@ -26,9 +30,7 @@ else
   certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect
 fi
 
-echo "== Firewall: открываем 80/443, закрываем прямой доступ к 4000 =="
-ufw allow 80/tcp
-ufw allow 443/tcp
+echo "== Firewall: закрываем прямой доступ к 4000 (снаружи остаются только 80/443) =="
 ufw delete allow 4000/tcp || true
 
 echo
