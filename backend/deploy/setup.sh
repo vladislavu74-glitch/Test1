@@ -45,6 +45,10 @@ echo "== Пользователь для запуска приложения =="
 id -u jobmonitor &>/dev/null || useradd --system --create-home --shell /usr/sbin/nologin jobmonitor
 
 echo "== Клонирование/обновление кода =="
+# Если каталог уже принадлежит jobmonitor (с прошлого прогона), а git
+# командой ниже выполняется от root — новые версии git откажутся работать
+# ("dubious ownership") без явного разрешения на этот путь.
+git config --global --add safe.directory "$APP_DIR"
 if [[ -d "$APP_DIR/.git" ]]; then
   git -C "$APP_DIR" fetch origin "$GIT_BRANCH"
   git -C "$APP_DIR" checkout "$GIT_BRANCH"
