@@ -1,0 +1,17 @@
+[Unit]
+Description=Job Monitor backend (vacancy scan + API)
+After=network.target
+
+[Service]
+Type=simple
+User=jobmonitor
+WorkingDirectory=/opt/jobmonitor/backend
+EnvironmentFile=/opt/jobmonitor/backend/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+# 1 GB RAM VPS — не даём процессу расти бесконтрольно при сбое.
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target
