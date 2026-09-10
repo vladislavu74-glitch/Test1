@@ -13,9 +13,10 @@ export const config = {
   apiAuthToken: required('API_AUTH_TOKEN', 'dev-only-token'),
   superJobApiKey: process.env.SUPERJOB_API_KEY ?? '',
   resendApiKey: process.env.RESEND_API_KEY ?? '',
-  // Без верифицированного домена в Resend отправлять можно только с этого
-  // адреса — куда угодно. См. src/mail/mailer.ts.
+  // Без верифицированного домена в Resend отправлять с этого адреса можно
+  // только на email, на который зарегистрирован сам аккаунт Resend — см.
+  // src/mail/mailer.ts и backend/README.md.
   mailFrom: process.env.MAIL_FROM ?? 'Job Monitor <onboarding@resend.dev>',
-  mailTo: process.env.MAIL_TO ?? 'V_utkin@castleduck.com',
+  mailTo: process.env.MAIL_TO ?? 'vladislav.u74@gmail.com',
   cronTz: process.env.CRON_TZ ?? 'Europe/Moscow',
 };

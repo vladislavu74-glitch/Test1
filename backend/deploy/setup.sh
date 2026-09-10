@@ -23,7 +23,7 @@ GIT_URL="${GIT_URL:?Set GIT_URL to the repo clone URL}"
 GIT_BRANCH="${GIT_BRANCH:-claude/ios-job-monitoring-app-3j1ae5}"
 API_AUTH_TOKEN="${API_AUTH_TOKEN:?Set API_AUTH_TOKEN to a long random string}"
 CRON_TZ="${CRON_TZ:-Europe/Moscow}"
-MAIL_TO="${MAIL_TO:-V_utkin@castleduck.com}"
+MAIL_TO="${MAIL_TO:-vladislav.u74@gmail.com}"
 RESEND_API_KEY="${RESEND_API_KEY:-}"
 MAIL_FROM="${MAIL_FROM:-Job Monitor <onboarding@resend.dev>}"
 

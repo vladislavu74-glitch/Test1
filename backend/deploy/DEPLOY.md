@@ -73,6 +73,7 @@ export RESEND_API_KEY="re_ВАШ_КЛЮЧ"
 sed -i \
   -e "s#^RESEND_API_KEY=.*#RESEND_API_KEY=\"${RESEND_API_KEY}\"#" \
   -e "s#^MAIL_FROM=.*#MAIL_FROM=\"Job Monitor <onboarding@resend.dev>\"#" \
+  -e "s#^MAIL_TO=.*#MAIL_TO=\"vladislav.u74@gmail.com\"#" \
   /opt/jobmonitor/backend/.env
 grep -q '^RESEND_API_KEY=' /opt/jobmonitor/backend/.env || echo "RESEND_API_KEY=\"${RESEND_API_KEY}\"" >> /opt/jobmonitor/backend/.env
 systemctl restart jobmonitor
@@ -80,10 +81,17 @@ systemctl restart jobmonitor
 curl -sS --max-time 15 -X POST 'https://api.resend.com/emails' \
   -H "Authorization: Bearer ${RESEND_API_KEY}" \
   -H 'Content-Type: application/json' \
-  -d '{"from":"Job Monitor <onboarding@resend.dev>","to":["V_utkin@castleduck.com"],"subject":"Job Monitor: проверка Resend","text":"Работает."}'
+  -d '{"from":"Job Monitor <onboarding@resend.dev>","to":["vladislav.u74@gmail.com"],"subject":"Job Monitor: проверка Resend","text":"Работает."}'
 ```
 (`grep -q ... || echo ... >>` на случай, если в `.env` со старой версии
 скрипта ещё нет строки `RESEND_API_KEY` — тогда допишет её в конец файла.)
+
+**Про адрес получателя**: без верификации домена в Resend можно слать
+только с `onboarding@resend.dev` и только на email, на который
+зарегистрирован сам аккаунт Resend (в данном случае —
+`vladislav.u74@gmail.com`, туда и настроен `MAIL_TO`). Если понадобится
+слать на другой адрес — верифицируйте домен в Resend (Dashboard →
+Domains) и смените `MAIL_FROM`/`MAIL_TO` соответственно.
 
 ## Шаг 3. Проверка
 

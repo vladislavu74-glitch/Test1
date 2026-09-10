@@ -29,7 +29,7 @@ curl -H "Authorization: Bearer <API_AUTH_TOKEN из .env>" http://localhost:4000
 | `API_AUTH_TOKEN` | токен, которым iOS-приложение авторизуется в API |
 | `SUPERJOB_API_KEY` | ключ приложения SuperJob (зарегистрировать на api.superjob.ru) |
 | `RESEND_API_KEY` | ключ Resend (resend.com/api-keys) для отправки email-дайджеста |
-| `MAIL_FROM` / `MAIL_TO` | отправитель и получатель дайджеста (по умолчанию `V_utkin@castleduck.com`) |
+| `MAIL_FROM` / `MAIL_TO` | отправитель и получатель дайджеста (по умолчанию `vladislav.u74@gmail.com`) |
 | `CRON_TZ` | таймзона ежедневного скана в 10:00 (по умолчанию `Europe/Moscow`) |
 | `PORT` | порт HTTP-сервера |
 
@@ -38,9 +38,11 @@ curl -H "Authorization: Bearer <API_AUTH_TOKEN из .env>" http://localhost:4000
 (25/465/587) по умолчанию как антиспам-меру, порт 443 почти никогда не
 блокируется (см. `src/mail/mailer.ts`). Без верификации своего домена в
 Resend можно отправлять только с адреса `onboarding@resend.dev` (значение
-`MAIL_FROM` по умолчанию), зато на любой адрес получателя — этого
-достаточно для личного дайджеста. Верификация домена (Dashboard → Domains)
-позволяет отправлять с адреса на своём домене.
+`MAIL_FROM` по умолчанию) и **только на email, на который зарегистрирован
+сам аккаунт Resend** — отсюда `MAIL_TO=vladislav.u74@gmail.com` по
+умолчанию. Верификация домена (Dashboard → Domains, несколько DNS-записей)
+снимает оба ограничения: можно будет слать с адреса на своём домене на
+любой получатель.
 
 ## Источники вакансий
 
