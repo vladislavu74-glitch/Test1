@@ -4,19 +4,30 @@
 # это НЕ выполняется автоматически из облачной сессии Claude, у неё нет
 # исходящего SSH).
 #
-# Использование:
-#   GIT_URL="https://<TOKEN>@github.com/vladislavu74-glitch/Test1.git" \
+# Использование (репозиторий публичный — токен для клонирования не нужен):
+#   GIT_URL="https://github.com/vladislavu74-glitch/Test1.git" \
 #   GIT_BRANCH="claude/ios-job-monitoring-app-3j1ae5" \
 #   API_AUTH_TOKEN="..." \
+#   SMTP_HOST="..." SMTP_PORT="..." SMTP_SECURE="true|false" \
+#   SMTP_USER="..." SMTP_PASS="..." MAIL_FROM="..." \
 #   bash setup.sh
+#
+# Все SMTP_*/MAIL_FROM переменные необязательны — если не заданы, .env
+# создаётся с пустыми значениями и их нужно будет дозаполнить вручную.
 set -euo pipefail
 
 APP_DIR="/opt/jobmonitor"
-GIT_URL="${GIT_URL:?Set GIT_URL to the repo clone URL (with a token if private)}"
+GIT_URL="${GIT_URL:?Set GIT_URL to the repo clone URL}"
 GIT_BRANCH="${GIT_BRANCH:-claude/ios-job-monitoring-app-3j1ae5}"
 API_AUTH_TOKEN="${API_AUTH_TOKEN:?Set API_AUTH_TOKEN to a long random string}"
 CRON_TZ="${CRON_TZ:-Europe/Moscow}"
 MAIL_TO="${MAIL_TO:-V_utkin@castleduck.com}"
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-465}"
+SMTP_SECURE="${SMTP_SECURE:-true}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASS="${SMTP_PASS:-}"
+MAIL_FROM="${MAIL_FROM:-}"
 
 echo "== Обновление системы и установка базовых пакетов =="
 apt-get update
@@ -49,15 +60,24 @@ cd "$BACKEND_DIR"
 echo "== .env =="
 if [[ ! -f .env ]]; then
   cp .env.example .env
+fi
+sed -i \
+  -e "s#^API_AUTH_TOKEN=.*#API_AUTH_TOKEN=\"${API_AUTH_TOKEN}\"#" \
+  -e "s#^CRON_TZ=.*#CRON_TZ=\"${CRON_TZ}\"#" \
+  -e "s#^MAIL_TO=.*#MAIL_TO=\"${MAIL_TO}\"#" \
+  .env
+if [[ -n "$SMTP_HOST" ]]; then
   sed -i \
-    -e "s#^API_AUTH_TOKEN=.*#API_AUTH_TOKEN=\"${API_AUTH_TOKEN}\"#" \
-    -e "s#^CRON_TZ=.*#CRON_TZ=\"${CRON_TZ}\"#" \
-    -e "s#^MAIL_TO=.*#MAIL_TO=\"${MAIL_TO}\"#" \
+    -e "s#^SMTP_HOST=.*#SMTP_HOST=\"${SMTP_HOST}\"#" \
+    -e "s#^SMTP_PORT=.*#SMTP_PORT=\"${SMTP_PORT}\"#" \
+    -e "s#^SMTP_SECURE=.*#SMTP_SECURE=\"${SMTP_SECURE}\"#" \
+    -e "s#^SMTP_USER=.*#SMTP_USER=\"${SMTP_USER}\"#" \
+    -e "s#^SMTP_PASS=.*#SMTP_PASS=\"${SMTP_PASS}\"#" \
+    -e "s#^MAIL_FROM=.*#MAIL_FROM=\"${MAIL_FROM}\"#" \
     .env
-  echo "Создан backend/.env — ЗАПОЛНИТЕ SMTP_USER/SMTP_PASS/MAIL_FROM и, если нужно, SUPERJOB_API_KEY:"
-  echo "  nano $BACKEND_DIR/.env"
+  echo "SMTP настроен из переданных переменных."
 else
-  echo ".env уже существует — не трогаю (проверьте вручную, что значения актуальны)."
+  echo "SMTP_* не переданы — заполните backend/.env вручную (nano $BACKEND_DIR/.env) перед тем, как ждать писем."
 fi
 chown jobmonitor:jobmonitor .env
 chmod 600 .env
@@ -83,11 +103,26 @@ ufw allow 4000/tcp   # временно, для проверки по IP до н
 ufw --force enable
 
 echo
-echo "Готово. Проверка:"
-echo "  curl http://178.217.98.225:4000/api/health"
+echo "== Проверка health-эндпоинта =="
+sleep 1
+curl -sf http://localhost:4000/api/health && echo || echo "(не ответил — смотри journalctl -u jobmonitor -n 50)"
+
+if [[ -n "$SMTP_HOST" ]]; then
+  echo
+  echo "== Тестовое письмо через настроенный SMTP =="
+  sudo -u jobmonitor node -e "
+    require('dotenv').config();
+    const nodemailer = require('nodemailer');
+    const t = nodemailer.createTransport({host:process.env.SMTP_HOST, port:+process.env.SMTP_PORT, secure:process.env.SMTP_SECURE==='true', auth:{user:process.env.SMTP_USER, pass:process.env.SMTP_PASS}});
+    t.sendMail({from:process.env.MAIL_FROM, to:process.env.MAIL_TO, subject:'Job Monitor: сервер запущен', text:'Backend развёрнут и SMTP настроен.'})
+      .then(()=>console.log('SMTP OK — письмо отправлено на', process.env.MAIL_TO))
+      .catch(e=>{ console.error('SMTP FAIL:', e.message); process.exitCode = 1; });
+  " || echo "Если тут ошибка — пришлите её текст, поправим порт/шифрование."
+fi
+
 echo
-echo "ВАЖНО: сейчас API_AUTH_TOKEN = ${API_AUTH_TOKEN}"
-echo "Впишите тот же токен в приложении (вкладка Настройки)."
+echo "Готово. Проверка снаружи: curl http://178.217.98.225:4000/api/health"
+echo "API_AUTH_TOKEN = ${API_AUTH_TOKEN}"
+echo "Впишите этот адрес (http://178.217.98.225:4000) и токен в приложении (вкладка Настройки)."
 echo
-echo "Дальше: заполните SMTP в backend/.env и перезапустите (systemctl restart jobmonitor)."
 echo "Когда домен будет указывать на этот сервер — запустите deploy/setup-nginx-tls.sh."
