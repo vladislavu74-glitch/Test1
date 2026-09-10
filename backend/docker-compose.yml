@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    volumes:
+      - job-monitor-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  job-monitor-data:

@@ -1,0 +1,179 @@
+import { prisma } from '../db/client';
+import { resolveConnector } from '../connectors';
+import type { RawVacancy, ScanCriteria, SourceRecord } from '../connectors/types';
+import { sendVacancyDigest } from '../mail/mailer';
+import type { VacancyForEmail } from '../mail/template';
+
+export type ScanTrigger = 'cron' | 'manual';
+
+export interface ScanResult {
+  scanRunId: string;
+  newVacancyCount: number;
+  emailSent: boolean;
+  errors: string[];
+}
+
+export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
+  const scanRun = await prisma.scanRun.create({ data: { trigger } });
+  const errors: string[] = [];
+
+  try {
+    const [sources, jobTitles, criteria] = await Promise.all([
+      prisma.source.findMany({ where: { enabled: true } }),
+      prisma.jobTitle.findMany({ where: { selected: true } }),
+      prisma.searchCriteria.findUnique({ where: { id: 'singleton' } }),
+    ]);
+
+    const newlyInsertedVacancyIds: string[] = [];
+
+    for (const jobTitle of jobTitles) {
+      const scanCriteria: ScanCriteria = {
+        jobTitle: jobTitle.title,
+        location: criteria?.location ?? null,
+        employmentType: criteria?.employmentType ?? null,
+        salaryMin: criteria?.salaryMin ?? null,
+        remoteOnly: criteria?.remoteOnly ?? false,
+      };
+
+      for (const source of sources) {
+        try {
+          const raw = await resolveConnector(toSourceRecord(source)).search(
+            toSourceRecord(source),
+            scanCriteria,
+          );
+          const insertedIds = await upsertVacancies(source.id, raw);
+          newlyInsertedVacancyIds.push(...insertedIds);
+        } catch (error) {
+          const message = `[${source.key} / "${jobTitle.title}"] ${(error as Error).message}`;
+          errors.push(message);
+          console.error(message);
+        }
+      }
+    }
+
+    let emailSent = false;
+    if (trigger === 'cron' && newlyInsertedVacancyIds.length > 0) {
+      emailSent = await notifyNewVacancies(newlyInsertedVacancyIds);
+    }
+
+    await prisma.scanRun.update({
+      where: { id: scanRun.id },
+      data: {
+        finishedAt: new Date(),
+        newVacancies: newlyInsertedVacancyIds.length,
+        emailSent,
+        error: errors.length ? errors.join('\n') : undefined,
+      },
+    });
+
+    return {
+      scanRunId: scanRun.id,
+      newVacancyCount: newlyInsertedVacancyIds.length,
+      emailSent,
+      errors,
+    };
+  } catch (error) {
+    await prisma.scanRun.update({
+      where: { id: scanRun.id },
+      data: { finishedAt: new Date(), error: (error as Error).message },
+    });
+    throw error;
+  }
+}
+
+function toSourceRecord(source: {
+  id: string;
+  key: string;
+  name: string;
+  kind: string;
+  country: string | null;
+  config: string;
+}): SourceRecord {
+  return {
+    id: source.id,
+    key: source.key,
+    name: source.name,
+    kind: source.kind as SourceRecord['kind'],
+    country: source.country,
+    config: source.config,
+  };
+}
+
+// Возвращает id вакансий, которые были ВСТАВЛЕНЫ впервые (а не просто
+// увидены повторно) — именно они считаются "новыми" для email-уведомления.
+async function upsertVacancies(sourceId: string, raw: RawVacancy[]): Promise<string[]> {
+  const insertedIds: string[] = [];
+
+  for (const vacancy of raw) {
+    const existing = await prisma.vacancy.findUnique({
+      where: { sourceId_externalId: { sourceId, externalId: vacancy.externalId } },
+    });
+
+    if (existing) {
+      await prisma.vacancy.update({
+        where: { id: existing.id },
+        data: {
+          title: vacancy.title,
+          company: vacancy.company,
+          url: vacancy.url,
+          location: vacancy.location,
+          salaryText: vacancy.salaryText,
+          publishedAt: vacancy.publishedAt,
+          lastSeenAt: new Date(),
+        },
+      });
+      continue;
+    }
+
+    const created = await prisma.vacancy.create({
+      data: {
+        sourceId,
+        externalId: vacancy.externalId,
+        title: vacancy.title,
+        company: vacancy.company,
+        url: vacancy.url,
+        location: vacancy.location,
+        salaryText: vacancy.salaryText,
+        publishedAt: vacancy.publishedAt,
+        state: { create: { hidden: false } },
+      },
+    });
+    insertedIds.push(created.id);
+  }
+
+  return insertedIds;
+}
+
+// Отправляет письмо по вакансиям, которые ещё не скрыты и по которым ещё не
+// отправлялось уведомление, и помечает их в NotificationLog.
+async function notifyNewVacancies(vacancyIds: string[]): Promise<boolean> {
+  const vacancies = await prisma.vacancy.findMany({
+    where: {
+      id: { in: vacancyIds },
+      state: { hidden: false },
+      notificationLog: null,
+    },
+    include: { source: true },
+  });
+
+  if (vacancies.length === 0) return false;
+
+  const forEmail: VacancyForEmail[] = vacancies.map((v) => ({
+    externalId: v.externalId,
+    title: v.title,
+    company: v.company ?? undefined,
+    url: v.url,
+    location: v.location ?? undefined,
+    salaryText: v.salaryText ?? undefined,
+    publishedAt: v.publishedAt,
+    sourceName: v.source.name,
+  }));
+
+  await sendVacancyDigest(forEmail);
+
+  await prisma.notificationLog.createMany({
+    data: vacancies.map((v) => ({ vacancyId: v.id })),
+  });
+
+  return true;
+}

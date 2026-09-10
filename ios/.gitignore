@@ -1,0 +1,8 @@
+# Генерируется командой `xcodegen generate` — не коммитим, чтобы не тащить
+# бинарный формат Xcode-проекта; source of truth — project.yml.
+JobMonitor.xcodeproj/
+
+.DS_Store
+xcuserdata/
+DerivedData/
+*.xcuserstate

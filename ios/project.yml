@@ -1,0 +1,33 @@
+name: JobMonitor
+options:
+  bundleIdPrefix: com.castleduck
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  JobMonitor:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: JobMonitor
+    info:
+      path: JobMonitor/Info.plist
+      properties:
+        CFBundleDisplayName: Job Monitor
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # Разрешаем произвольные (в т.ч. http) соединения — приложение личное,
+        # backend в первое время обычно тестируется по локальному IP без TLS.
+        # Для боевого backend'а на своём домене с HTTPS это можно убрать.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.castleduck.jobmonitor
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
