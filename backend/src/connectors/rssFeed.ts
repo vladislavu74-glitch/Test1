@@ -30,4 +30,10 @@ export const rssFeedConnector: JobSourceConnector = {
         publishedAt: item.isoDate ? new Date(item.isoDate) : new Date(),
       }));
   },
+
+  // Для автообнаружения: лента должна как минимум успешно распарситься.
+  async probe(source: SourceRecord): Promise<void> {
+    const cfg: RssFeedConfig = JSON.parse(source.config);
+    await parser.parseURL(cfg.feedUrl);
+  },
 };

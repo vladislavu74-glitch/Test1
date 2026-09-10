@@ -32,8 +32,42 @@ vacanciesRouter.get('/', async (req, res) => {
       publishedAt: v.publishedAt,
       sourceName: v.source.name,
       hidden: v.state?.hidden ?? false,
+      isNew: !(v.state?.seen ?? false),
     })),
   );
+});
+
+// Для бейджа/счётчика в приложении: сколько активных (не скрытых) вакансий
+// пользователь ещё не видел.
+vacanciesRouter.get('/summary', async (_req, res) => {
+  const newCount = await prisma.vacancy.count({
+    where: {
+      OR: [{ state: null }, { state: { hidden: false, seen: false } }],
+    },
+  });
+  res.json({ newCount });
+});
+
+// Вызывается приложением после показа списка активных вакансий — снимает
+// значок "Новое" с уже показанных записей. Скрытые вакансии не трогаем,
+// чтобы при повторном показе они не потеряли статус "новых".
+vacanciesRouter.post('/mark-all-seen', async (_req, res) => {
+  const unseen = await prisma.vacancy.findMany({
+    where: { OR: [{ state: null }, { state: { hidden: false, seen: false } }] },
+    select: { id: true },
+  });
+
+  await prisma.$transaction(
+    unseen.map((v) =>
+      prisma.vacancyState.upsert({
+        where: { vacancyId: v.id },
+        update: { seen: true },
+        create: { vacancyId: v.id, seen: true },
+      }),
+    ),
+  );
+
+  res.status(204).end();
 });
 
 vacanciesRouter.post('/:id/hide', (req, res) => setHidden(req.params.id, true, res));

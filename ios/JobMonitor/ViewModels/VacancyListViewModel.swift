@@ -12,9 +12,11 @@ final class VacancyListViewModel: ObservableObject {
 
     private static let filterKey = "vacancyListFilter"
     private let client: APIClient
+    private let badge: BadgeStore
 
-    init(client: APIClient) {
+    init(client: APIClient, badge: BadgeStore) {
         self.client = client
+        self.badge = badge
         if let saved = UserDefaults.standard.string(forKey: Self.filterKey),
            let restored = VacancyFilter(rawValue: saved) {
             self.filter = restored
@@ -26,10 +28,17 @@ final class VacancyListViewModel: ObservableObject {
         errorMessage = nil
         do {
             vacancies = try await client.fetchVacancies(filter: filter)
+            // Список уже показан пользователю с текущими значками "Новое" —
+            // отмечаем их просмотренными, чтобы бейдж и следующая загрузка
+            // не подсвечивали те же записи повторно.
+            if filter == .active {
+                try? await client.markAllVacanciesSeen()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+        await badge.refresh()
     }
 
     func hide(_ vacancy: Vacancy) async {

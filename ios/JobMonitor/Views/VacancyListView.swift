@@ -5,8 +5,8 @@ struct VacancyListView: View {
     @StateObject private var viewModel: VacancyListViewModel
     @State private var selectedURL: URL?
 
-    init(client: APIClient) {
-        _viewModel = StateObject(wrappedValue: VacancyListViewModel(client: client))
+    init(client: APIClient, badge: BadgeStore) {
+        _viewModel = StateObject(wrappedValue: VacancyListViewModel(client: client, badge: badge))
     }
 
     var body: some View {
@@ -115,6 +115,14 @@ private struct VacancyRow: View {
             HStack {
                 Text(vacancy.title)
                     .font(.headline)
+                if vacancy.isNew && !vacancy.hidden {
+                    Text("Новое")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor, in: Capsule())
+                        .foregroundStyle(.white)
+                }
                 Spacer()
                 if vacancy.hidden {
                     Image(systemName: "eye.slash")

@@ -78,6 +78,14 @@ final class APIClient {
         try await post("/api/vacancies/\(id)/unhide", body: EmptyBody())
     }
 
+    func fetchVacancySummary() async throws -> VacancySummary {
+        try await get("/api/vacancies/summary")
+    }
+
+    func markAllVacanciesSeen() async throws {
+        try await post("/api/vacancies/mark-all-seen", body: EmptyBody())
+    }
+
     // MARK: - Sources
 
     func fetchSources() async throws -> [JobSource] {
@@ -86,6 +94,37 @@ final class APIClient {
 
     func setSourceEnabled(id: String, enabled: Bool) async throws {
         try await patch("/api/sources/\(id)", body: ["enabled": enabled])
+    }
+
+    // MARK: - Source discovery (каталог кандидатов)
+
+    func fetchSourceCandidates() async throws -> [SourceCandidate] {
+        try await get("/api/source-candidates")
+    }
+
+    struct AddSourceCandidateRequest: Encodable {
+        let name: String
+        let country: String?
+        let type: String
+        let boardSlug: String?
+        let feedUrl: String?
+    }
+
+    func addSourceCandidate(name: String, country: String?, type: CandidateType, boardSlug: String?, feedUrl: String?) async throws -> SourceCandidate {
+        let body = AddSourceCandidateRequest(name: name, country: country, type: type.rawValue, boardSlug: boardSlug, feedUrl: feedUrl)
+        return try await post("/api/source-candidates", body: body)
+    }
+
+    func deleteSourceCandidate(id: String) async throws {
+        try await delete("/api/source-candidates/\(id)")
+    }
+
+    func runDiscoveryNow() async throws -> DiscoveryResult {
+        try await post("/api/source-candidates/discover", body: EmptyBody())
+    }
+
+    func fetchLastDiscovery() async throws -> DiscoveryRun? {
+        try await getOptional("/api/scan/last-discovery")
     }
 
     // MARK: - Job titles
@@ -123,18 +162,7 @@ final class APIClient {
     }
 
     func fetchLastScan() async throws -> ScanRun? {
-        let request = try makeRequest("/api/scan/last", method: "GET")
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? ""
-            throw APIError.server(status: http.statusCode, message: message)
-        }
-        let trimmed = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed == nil || trimmed == "null" || trimmed?.isEmpty == true {
-            return nil
-        }
-        return try decoder.decode(ScanRun.self, from: data)
+        try await getOptional("/api/scan/last")
     }
 
     // MARK: - Core request plumbing
@@ -180,6 +208,24 @@ final class APIClient {
     private func get<Response: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> Response {
         let request = try makeRequest(path, method: "GET", query: query)
         return try await send(request)
+    }
+
+    // Для эндпоинтов вида `res.json(possiblyNullRow)`, которые при отсутствии
+    // записи отдают буквальный JSON `null` — обычная decode(Optional<T>.self)
+    // через `get` не нужна, читаем тело руками и трактуем "null"/пустое как nil.
+    private func getOptional<Response: Decodable>(_ path: String) async throws -> Response? {
+        let request = try makeRequest(path, method: "GET")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let message = String(data: data, encoding: .utf8) ?? ""
+            throw APIError.server(status: http.statusCode, message: message)
+        }
+        let trimmed = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == nil || trimmed == "null" || trimmed?.isEmpty == true {
+            return nil
+        }
+        return try decoder.decode(Response.self, from: data)
     }
 
     private func post<Body: Encodable, Response: Decodable>(_ path: String, body: Body) async throws -> Response {

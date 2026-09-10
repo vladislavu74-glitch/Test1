@@ -10,6 +10,11 @@ struct Vacancy: Identifiable, Codable, Equatable {
     let publishedAt: Date
     let sourceName: String
     let hidden: Bool
+    let isNew: Bool
+}
+
+struct VacancySummary: Codable, Equatable {
+    let newCount: Int
 }
 
 enum VacancyFilter: String, CaseIterable, Identifiable {

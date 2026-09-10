@@ -6,6 +6,7 @@ import { jobTitlesRouter } from './routes/jobTitles';
 import { criteriaRouter } from './routes/criteria';
 import { vacanciesRouter } from './routes/vacancies';
 import { scanRouter } from './routes/scan';
+import { sourceCandidatesRouter } from './routes/sourceCandidates';
 
 export function createApp(): Express {
   const app = express();
@@ -19,6 +20,7 @@ export function createApp(): Express {
   app.use('/api/criteria', requireAuth, criteriaRouter);
   app.use('/api/vacancies', requireAuth, vacanciesRouter);
   app.use('/api/scan', requireAuth, scanRouter);
+  app.use('/api/source-candidates', requireAuth, sourceCandidatesRouter);
 
   return app;
 }

@@ -2,16 +2,20 @@ import SwiftUI
 
 struct RootTabView: View {
     @EnvironmentObject private var settings: AppSettings
+    @StateObject private var badge: BadgeStore
     private let client: APIClient
 
     init(settings: AppSettings) {
-        self.client = APIClient(settings: settings)
+        let client = APIClient(settings: settings)
+        self.client = client
+        _badge = StateObject(wrappedValue: BadgeStore(client: client))
     }
 
     var body: some View {
         TabView {
-            VacancyListView(client: client)
+            VacancyListView(client: client, badge: badge)
                 .tabItem { Label("Вакансии", systemImage: "list.bullet") }
+                .badge(badge.newVacancyCount)
 
             JobTitlesView(client: client)
                 .tabItem { Label("Должности", systemImage: "checklist") }
@@ -25,5 +29,6 @@ struct RootTabView: View {
             SettingsView(client: client)
                 .tabItem { Label("Настройки", systemImage: "gearshape") }
         }
+        .task { await badge.refresh() }
     }
 }

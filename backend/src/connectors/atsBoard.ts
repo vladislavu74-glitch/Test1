@@ -44,6 +44,17 @@ export const atsBoardConnector: JobSourceConnector = {
     const needle = criteria.jobTitle.toLowerCase();
     return all.filter((vacancy) => vacancy.title.toLowerCase().includes(needle));
   },
+
+  // Для автообнаружения: просто убеждаемся, что доска существует и отдаёт
+  // корректный ответ (пустой список вакансий — это тоже валидный ответ).
+  async probe(source: SourceRecord): Promise<void> {
+    const cfg: AtsBoardConfig = JSON.parse(source.config);
+    if (cfg.provider === 'greenhouse') {
+      await fetchGreenhouse(cfg.boardSlug);
+    } else {
+      await fetchLever(cfg.boardSlug);
+    }
+  },
 };
 
 async function fetchGreenhouse(boardSlug: string): Promise<RawVacancy[]> {

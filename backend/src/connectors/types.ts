@@ -32,4 +32,10 @@ export interface SourceRecord {
 export interface JobSourceConnector {
   key: string;
   search(source: SourceRecord, criteria: ScanCriteria): Promise<RawVacancy[]>;
+  // Необязательная лёгкая проверка "жив ли ресурс и правда ли отдаёт вакансии",
+  // без фильтрации по названию должности. Используется при автообнаружении
+  // источников (см. src/jobs/discoverSources.ts) — коннекторы вакансионных
+  // API (hh.ru/SuperJob/Habr) его не реализуют, т.к. не участвуют в каталоге
+  // кандидатов (они и так уже в списке источников).
+  probe?(source: SourceRecord): Promise<void>;
 }
