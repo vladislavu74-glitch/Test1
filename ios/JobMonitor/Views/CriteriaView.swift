@@ -1,5 +1,9 @@
 import SwiftUI
 
+private func hideKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
 struct CriteriaView: View {
     @StateObject private var viewModel: CriteriaViewModel
 
@@ -35,9 +39,13 @@ struct CriteriaView: View {
                 Section {
                     Toggle("Только удалённая работа", isOn: $viewModel.criteria.remoteOnly)
                 }
-
-                Section {
+            }
+            .navigationTitle("Критерии поиска")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
+                        hideKeyboard()
                         Task { await viewModel.save() }
                     } label: {
                         if viewModel.isSaving {
@@ -48,8 +56,11 @@ struct CriteriaView: View {
                     }
                     .disabled(viewModel.isSaving)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Готово") { hideKeyboard() }
+                }
             }
-            .navigationTitle("Критерии поиска")
             .task { await viewModel.load() }
             .alert(
                 "Ошибка",
