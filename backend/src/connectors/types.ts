@@ -3,7 +3,9 @@
 // выбранное название (см. src/jobs/scan.ts).
 export interface ScanCriteria {
   jobTitle: string;
-  location?: string | null;
+  countries: string[];
+  regions: string[];
+  cities: string[];
   employmentType?: string | null;
   salaryMin?: number | null;
   remoteOnly: boolean;

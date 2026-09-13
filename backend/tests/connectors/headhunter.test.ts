@@ -18,7 +18,9 @@ describe('headHunterConnector', () => {
 
   const criteria: ScanCriteria = {
     jobTitle: 'iOS Developer',
-    location: null,
+    countries: [],
+    regions: [],
+    cities: [],
     employmentType: null,
     salaryMin: null,
     remoteOnly: false,

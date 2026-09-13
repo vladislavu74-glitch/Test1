@@ -45,6 +45,17 @@ final class JobTitlesViewModel: ObservableObject {
         }
     }
 
+    func rename(_ jobTitle: JobTitle, to newTitle: String) async {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != jobTitle.title else { return }
+        do {
+            try await client.renameJobTitle(id: jobTitle.id, title: trimmed)
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func delete(_ jobTitle: JobTitle) async {
         do {
             try await client.deleteJobTitle(id: jobTitle.id)

@@ -4,6 +4,7 @@ struct VacancyListView: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var viewModel: VacancyListViewModel
     @State private var selectedURL: URL?
+    @State private var showClearConfirmation = false
 
     init(client: APIClient, badge: BadgeStore) {
         _viewModel = StateObject(wrappedValue: VacancyListViewModel(client: client, badge: badge))
@@ -26,6 +27,24 @@ struct VacancyListView: View {
                         }
                         .disabled(viewModel.isScanning || !settings.isConfigured)
                     }
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button(role: .destructive) {
+                            showClearConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(viewModel.vacancies.isEmpty)
+                    }
+                }
+                .confirmationDialog(
+                    "Удалить все найденные вакансии без возможности восстановления?",
+                    isPresented: $showClearConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Очистить всё", role: .destructive) {
+                        Task { await viewModel.clearAll() }
+                    }
+                    Button("Отмена", role: .cancel) {}
                 }
                 .safeAreaInset(edge: .top) {
                     Picker("Фильтр", selection: $viewModel.filter) {

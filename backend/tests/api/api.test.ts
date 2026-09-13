@@ -175,6 +175,99 @@ describe('vacancies', () => {
     const listAfter = await request(app).get('/api/vacancies?filter=active').set(authHeader).expect(200);
     expect(listAfter.body.find((v: { id: string }) => v.id === vacancy.id).isNew).toBe(false);
   });
+
+  it('puts unseen ("new") vacancies above already-seen ones regardless of publish date', async () => {
+    const source = await prisma.source.create({
+      data: { key: 'hh_ru', name: 'hh.ru', kind: 'api', config: '{}' },
+    });
+    const olderButNew = await prisma.vacancy.create({
+      data: {
+        sourceId: source.id,
+        externalId: 'old-new',
+        title: 'Older but unseen',
+        url: 'https://example.com/old-new',
+        publishedAt: new Date('2024-01-01'),
+        state: { create: { hidden: false, seen: false } },
+      },
+    });
+    const newerButSeen = await prisma.vacancy.create({
+      data: {
+        sourceId: source.id,
+        externalId: 'new-seen',
+        title: 'Newer but already seen',
+        url: 'https://example.com/new-seen',
+        publishedAt: new Date('2024-06-01'),
+        state: { create: { hidden: false, seen: true } },
+      },
+    });
+
+    const list = await request(app).get('/api/vacancies?filter=active').set(authHeader).expect(200);
+    expect(list.body.map((v: { id: string }) => v.id)).toEqual([olderButNew.id, newerButSeen.id]);
+  });
+
+  it('clears all accumulated vacancies', async () => {
+    const source = await prisma.source.create({
+      data: { key: 'hh_ru', name: 'hh.ru', kind: 'api', config: '{}' },
+    });
+    await prisma.vacancy.create({
+      data: {
+        sourceId: source.id,
+        externalId: 'v1',
+        title: 'iOS Developer',
+        url: 'https://example.com/v1',
+        publishedAt: new Date('2024-01-01'),
+        state: { create: { hidden: false } },
+      },
+    });
+
+    await request(app).delete('/api/vacancies').set(authHeader).expect(204);
+
+    const list = await request(app).get('/api/vacancies?filter=all').set(authHeader).expect(200);
+    expect(list.body).toHaveLength(0);
+  });
+});
+
+describe('job title rename', () => {
+  it('renames a job title without losing its id/selected state', async () => {
+    const created = await request(app)
+      .post('/api/job-titles')
+      .set(authHeader)
+      .send({ title: 'iOS Developer' })
+      .expect(201);
+    await request(app)
+      .patch(`/api/job-titles/${created.body.id}`)
+      .set(authHeader)
+      .send({ selected: true })
+      .expect(200);
+
+    const renamed = await request(app)
+      .patch(`/api/job-titles/${created.body.id}`)
+      .set(authHeader)
+      .send({ title: 'Senior iOS Developer' })
+      .expect(200);
+    expect(renamed.body.id).toBe(created.body.id);
+    expect(renamed.body.title).toBe('Senior iOS Developer');
+    expect(renamed.body.selected).toBe(true);
+  });
+});
+
+describe('search criteria', () => {
+  it('defaults to empty geography lists and round-trips a PUT', async () => {
+    const initial = await request(app).get('/api/criteria').set(authHeader).expect(200);
+    expect(initial.body).toMatchObject({ countries: [], regions: [], cities: [] });
+
+    const updated = await request(app)
+      .put('/api/criteria')
+      .set(authHeader)
+      .send({ countries: ['Россия', 'Казахстан'], regions: ['Московская область'], cities: ['Москва', 'Алматы'] })
+      .expect(200);
+    expect(updated.body.countries).toEqual(['Россия', 'Казахстан']);
+    expect(updated.body.regions).toEqual(['Московская область']);
+    expect(updated.body.cities).toEqual(['Москва', 'Алматы']);
+
+    const fetched = await request(app).get('/api/criteria').set(authHeader).expect(200);
+    expect(fetched.body.cities).toEqual(['Москва', 'Алматы']);
+  });
 });
 
 describe('source candidates and discovery', () => {

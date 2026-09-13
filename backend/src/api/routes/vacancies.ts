@@ -21,8 +21,15 @@ vacanciesRouter.get('/', async (req, res) => {
     orderBy: { publishedAt: 'desc' },
   });
 
+  // Непросмотренные ("Новое") всегда наверху списка, а не просто вакансии
+  // с более свежей датой публикации — иначе новая для нас вакансия с
+  // более старой датой публикации на сайте-источнике тонет среди уже
+  // просмотренных, но недавно опубликованных.
+  const withIsNew = vacancies.map((v) => ({ v, isNew: !(v.state?.seen ?? false) }));
+  withIsNew.sort((a, b) => Number(b.isNew) - Number(a.isNew));
+
   res.json(
-    vacancies.map((v) => ({
+    withIsNew.map(({ v, isNew }) => ({
       id: v.id,
       title: v.title,
       company: v.company,
@@ -32,9 +39,18 @@ vacanciesRouter.get('/', async (req, res) => {
       publishedAt: v.publishedAt,
       sourceName: v.source.name,
       hidden: v.state?.hidden ?? false,
-      isNew: !(v.state?.seen ?? false),
+      isNew,
     })),
   );
+});
+
+// Полная очистка накопленных вакансий — например, после смены критериев
+// поиска или коннекторов, чтобы не держать старые нерелевантные результаты.
+vacanciesRouter.delete('/', async (_req, res) => {
+  await prisma.notificationLog.deleteMany();
+  await prisma.vacancyState.deleteMany();
+  await prisma.vacancy.deleteMany();
+  res.status(204).end();
 });
 
 // Для бейджа/счётчика в приложении: сколько активных (не скрытых) вакансий

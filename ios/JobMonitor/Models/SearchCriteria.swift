@@ -1,7 +1,9 @@
 import Foundation
 
 struct SearchCriteria: Codable, Equatable {
-    var location: String?
+    var countries: [String]
+    var regions: [String]
+    var cities: [String]
     var employmentType: String?
     var salaryMin: Int?
     var remoteOnly: Bool

@@ -58,6 +58,16 @@ final class VacancyListViewModel: ObservableObject {
         }
     }
 
+    func clearAll() async {
+        errorMessage = nil
+        do {
+            try await client.clearAllVacancies()
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func runScanNow() async {
         isScanning = true
         errorMessage = nil

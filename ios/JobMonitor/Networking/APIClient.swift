@@ -86,6 +86,10 @@ final class APIClient {
         try await post("/api/vacancies/mark-all-seen", body: EmptyBody())
     }
 
+    func clearAllVacancies() async throws {
+        try await delete("/api/vacancies")
+    }
+
     // MARK: - Sources
 
     func fetchSources() async throws -> [JobSource] {
@@ -147,6 +151,10 @@ final class APIClient {
 
     func setJobTitleSelected(id: String, selected: Bool) async throws {
         try await patch("/api/job-titles/\(id)", body: ["selected": selected])
+    }
+
+    func renameJobTitle(id: String, title: String) async throws {
+        try await patch("/api/job-titles/\(id)", body: ["title": title])
     }
 
     func deleteJobTitle(id: String) async throws {
@@ -249,6 +257,12 @@ final class APIClient {
     }
 
     private func patch(_ path: String, body: [String: Bool]) async throws {
+        var request = try makeRequest(path, method: "PATCH")
+        request.httpBody = try encoder.encode(body)
+        let _: EmptyResponse = try await send(request)
+    }
+
+    private func patch(_ path: String, body: [String: String]) async throws {
         var request = try makeRequest(path, method: "PATCH")
         request.httpBody = try encoder.encode(body)
         let _: EmptyResponse = try await send(request)

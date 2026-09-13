@@ -14,12 +14,9 @@ struct CriteriaView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Локация") {
-                    TextField("Город/регион", text: Binding(
-                        get: { viewModel.criteria.location ?? "" },
-                        set: { viewModel.criteria.location = $0.isEmpty ? nil : $0 }
-                    ))
-                }
+                GeographyListEditor(title: "Страны", placeholder: "Например: Россия", items: $viewModel.criteria.countries)
+                GeographyListEditor(title: "Регионы", placeholder: "Например: Московская область", items: $viewModel.criteria.regions)
+                GeographyListEditor(title: "Города", placeholder: "Например: Алматы", items: $viewModel.criteria.cities)
 
                 Section("Тип занятости") {
                     TextField("Например: полная занятость", text: Binding(
@@ -75,6 +72,42 @@ struct CriteriaView: View {
             }
             .alert("Сохранено", isPresented: $viewModel.saved) {
                 Button("OK", role: .cancel) {}
+            }
+        }
+    }
+}
+
+/// Список значений (страны/регионы/города), которые пользователь пополняет
+/// по одному — вакансия проходит фильтр, если её location (как его вернул
+/// источник) содержит хотя бы одно из перечисленных значений. Пустой
+/// список означает "без ограничения по этому полю".
+private struct GeographyListEditor: View {
+    let title: String
+    let placeholder: String
+    @Binding var items: [String]
+
+    @State private var newValue = ""
+
+    var body: some View {
+        Section(title) {
+            ForEach(items, id: \.self) { item in
+                Text(item)
+            }
+            .onDelete { indexSet in
+                items.remove(atOffsets: indexSet)
+            }
+
+            HStack {
+                TextField(placeholder, text: $newValue)
+                    .autocorrectionDisabled()
+                Button("Добавить") {
+                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty, !items.contains(trimmed) else { return }
+                    items.append(trimmed)
+                    newValue = ""
+                    hideKeyboard()
+                }
+                .disabled(newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
     }

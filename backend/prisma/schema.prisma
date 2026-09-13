@@ -75,7 +75,12 @@ model JobTitle {
 // оно берётся из выбранных JobTitle). Единственная запись в таблице.
 model SearchCriteria {
   id             String   @id @default("singleton")
-  location       String?
+  // JSON-массивы строк (например ["Россия","Казахстан"]) — хранятся как
+  // текст по тому же принципу, что и Source.config, т.к. SQLite не
+  // поддерживает нативные списки в Prisma.
+  countries      String   @default("[]")
+  regions        String   @default("[]")
+  cities         String   @default("[]")
   employmentType String?
   salaryMin      Int?
   remoteOnly     Boolean  @default(false)

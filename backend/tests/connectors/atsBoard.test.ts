@@ -19,7 +19,9 @@ function mockJsonResponse(body: unknown, ok = true) {
 describe('atsBoardConnector', () => {
   const criteria: ScanCriteria = {
     jobTitle: 'Backend',
-    location: null,
+    countries: [],
+    regions: [],
+    cities: [],
     employmentType: null,
     salaryMin: null,
     remoteOnly: false,

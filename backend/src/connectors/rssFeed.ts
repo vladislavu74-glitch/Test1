@@ -26,6 +26,7 @@ export const rssFeedConnector: JobSourceConnector = {
       .map((item) => ({
         externalId: item.guid ?? item.link!,
         title: item.title!,
+        company: item.creator || undefined,
         url: item.link!,
         publishedAt: item.isoDate ? new Date(item.isoDate) : new Date(),
       }));

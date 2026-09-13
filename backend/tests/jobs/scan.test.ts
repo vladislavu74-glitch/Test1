@@ -143,6 +143,22 @@ describe('runScan', () => {
     expect(state?.hidden).toBe(true);
   });
 
+  it('filters out vacancies whose location does not match the configured countries/regions/cities', async () => {
+    await prisma.searchCriteria.create({
+      data: { id: 'singleton', cities: JSON.stringify(['Алматы']) },
+    });
+    fakeVacancies = [
+      { externalId: 'v1', title: 'iOS Developer', url: 'https://example.com/v1', location: 'Москва', publishedAt: new Date('2024-01-01') },
+      { externalId: 'v2', title: 'iOS Developer', url: 'https://example.com/v2', location: 'Алматы', publishedAt: new Date('2024-01-02') },
+    ];
+
+    const result = await runScan('manual');
+
+    expect(result.newVacancyCount).toBe(1);
+    const vacancy = await prisma.vacancy.findFirstOrThrow();
+    expect(vacancy.location).toBe('Алматы');
+  });
+
   it('collapses the same connector error repeated across job titles into one summarized line', async () => {
     await prisma.jobTitle.create({ data: { title: 'Android Developer', selected: true } });
     fakeConnector.search = async () => {

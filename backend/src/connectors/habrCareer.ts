@@ -31,7 +31,9 @@ export const habrCareerConnector: JobSourceConnector = {
       .map((item) => ({
         externalId: item.guid ?? item.link!,
         title: item.title ?? criteria.jobTitle,
-        company: undefined,
+        // Habr Career публикует название компании в <dc:creator>, которое
+        // rss-parser разбирает в item.creator.
+        company: item.creator || undefined,
         url: item.link!,
         location: undefined,
         salaryText: undefined,

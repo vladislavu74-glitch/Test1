@@ -26,10 +26,18 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
 
     const newlyInsertedVacancyIds: string[] = [];
 
+    const geography = [
+      ...(criteria ? (JSON.parse(criteria.countries) as string[]) : []),
+      ...(criteria ? (JSON.parse(criteria.regions) as string[]) : []),
+      ...(criteria ? (JSON.parse(criteria.cities) as string[]) : []),
+    ];
+
     for (const jobTitle of jobTitles) {
       const scanCriteria: ScanCriteria = {
         jobTitle: jobTitle.title,
-        location: criteria?.location ?? null,
+        countries: criteria ? (JSON.parse(criteria.countries) as string[]) : [],
+        regions: criteria ? (JSON.parse(criteria.regions) as string[]) : [],
+        cities: criteria ? (JSON.parse(criteria.cities) as string[]) : [],
         employmentType: criteria?.employmentType ?? null,
         salaryMin: criteria?.salaryMin ?? null,
         remoteOnly: criteria?.remoteOnly ?? false,
@@ -41,7 +49,11 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
             toSourceRecord(source),
             scanCriteria,
           );
-          const insertedIds = await upsertVacancies(source.id, raw);
+          // Ни один коннектор не умеет сам фильтровать по произвольному
+          // списку стран/регионов/городов — делаем это здесь, единообразно
+          // для всех источников, по полю location, которое они возвращают.
+          const filtered = filterByGeography(raw, geography);
+          const insertedIds = await upsertVacancies(source.id, filtered);
           newlyInsertedVacancyIds.push(...insertedIds);
         } catch (error) {
           const message = `[${source.key} / "${jobTitle.title}"] ${(error as Error).message}`;
@@ -95,6 +107,20 @@ function summarizeErrors(errors: string[]): string {
   return Array.from(counts.entries())
     .map(([message, count]) => (count > 1 ? `${message} (×${count})` : message))
     .join('\n');
+}
+
+// Пустой список стран/регионов/городов означает "без ограничения по
+// географии" — так было и раньше, до этого поля. Если список задан,
+// оставляем только вакансии, чьё location (как его вернул коннектор)
+// содержит хотя бы одно из значений (без учёта регистра).
+function filterByGeography(vacancies: RawVacancy[], geography: string[]): RawVacancy[] {
+  if (geography.length === 0) return vacancies;
+  const needles = geography.map((g) => g.toLowerCase());
+  return vacancies.filter((v) => {
+    if (!v.location) return false;
+    const loc = v.location.toLowerCase();
+    return needles.some((needle) => loc.includes(needle));
+  });
 }
 
 function toSourceRecord(source: {
