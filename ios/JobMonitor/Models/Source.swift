@@ -34,6 +34,8 @@ struct SourceCandidate: Identifiable, Codable, Equatable {
     let specialization: String?
     let evidenceQuote: String?
     let employerContact: String?
+    // "recruiting_agency" | "job_board" | "employer_repository" | "unclear"
+    let resourceType: String?
 
     var isPromoted: Bool { promotedSourceId != nil }
     var isAgency: Bool { kind == "recruiting_agency" }
