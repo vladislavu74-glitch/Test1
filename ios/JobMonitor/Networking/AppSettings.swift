@@ -15,7 +15,7 @@ final class AppSettings: ObservableObject {
 
     init() {
         self.baseURLString = UserDefaults.standard.string(forKey: Self.baseURLKey) ?? "https://jobmonitor.castleduck.com"
-        self.apiToken = KeychainStore.load() ?? ""
+        self.apiToken = KeychainStore.load() ?? Secrets.defaultAPIToken
     }
 
     var baseURL: URL? { URL(string: baseURLString) }

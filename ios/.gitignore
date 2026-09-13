@@ -6,3 +6,8 @@ JobMonitor.xcodeproj/
 xcuserdata/
 DerivedData/
 *.xcuserstate
+
+# Локальный секрет (API-токен) для автозаполнения при первом запуске —
+# см. JobMonitor/Networking/Secrets.swift.example. Реальный токен не должен
+# попадать в публичный репозиторий.
+JobMonitor/Networking/Secrets.swift

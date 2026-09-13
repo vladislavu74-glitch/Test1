@@ -26,7 +26,7 @@ targets:
           NSAllowsArbitraryLoads: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.castleduck.jobmonitor
+        PRODUCT_BUNDLE_IDENTIFIER: com.vladislav-utkin.jobmonitor
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
