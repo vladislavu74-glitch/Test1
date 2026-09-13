@@ -4,11 +4,7 @@
 export interface ScanCriteria {
   jobTitle: string;
   countries: string[];
-  regions: string[];
   cities: string[];
-  employmentType?: string | null;
-  salaryMin?: number | null;
-  remoteOnly: boolean;
 }
 
 // Нормализованная вакансия, которую возвращает любой коннектор.
@@ -26,7 +22,7 @@ export interface SourceRecord {
   id: string;
   key: string;
   name: string;
-  kind: 'api' | 'ats' | 'rss';
+  kind: 'api' | 'ats' | 'rss' | 'recruiting_agency' | 'generic_site' | 'telegram_channel';
   country?: string | null;
   config: string;
 }

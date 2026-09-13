@@ -26,21 +26,15 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
 
     const newlyInsertedVacancyIds: string[] = [];
 
-    const geography = [
-      ...(criteria ? (JSON.parse(criteria.countries) as string[]) : []),
-      ...(criteria ? (JSON.parse(criteria.regions) as string[]) : []),
-      ...(criteria ? (JSON.parse(criteria.cities) as string[]) : []),
-    ];
+    const countries = criteria ? (JSON.parse(criteria.countries) as string[]) : [];
+    const cities = criteria ? (JSON.parse(criteria.cities) as string[]) : [];
+    const geography = [...countries, ...cities];
 
     for (const jobTitle of jobTitles) {
       const scanCriteria: ScanCriteria = {
         jobTitle: jobTitle.title,
-        countries: criteria ? (JSON.parse(criteria.countries) as string[]) : [],
-        regions: criteria ? (JSON.parse(criteria.regions) as string[]) : [],
-        cities: criteria ? (JSON.parse(criteria.cities) as string[]) : [],
-        employmentType: criteria?.employmentType ?? null,
-        salaryMin: criteria?.salaryMin ?? null,
-        remoteOnly: criteria?.remoteOnly ?? false,
+        countries,
+        cities,
       };
 
       for (const source of sources) {
@@ -117,7 +111,11 @@ function filterByGeography(vacancies: RawVacancy[], geography: string[]): RawVac
   if (geography.length === 0) return vacancies;
   const needles = geography.map((g) => g.toLowerCase());
   return vacancies.filter((v) => {
-    if (!v.location) return false;
+    // Многие источники (Habr Career, RSS-ленты) вообще не отдают location —
+    // в этом случае нет оснований считать вакансию несовпадающей, и
+    // отбрасывать её означало бы тихо обнулять результаты именно там,
+    // где фильтр неприменим, а не там, где город реально не совпал.
+    if (!v.location) return true;
     const loc = v.location.toLowerCase();
     return needles.some((needle) => loc.includes(needle));
   });

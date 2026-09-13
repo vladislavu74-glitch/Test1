@@ -74,17 +74,14 @@ model JobTitle {
 // Остальные критерии поиска (без свободного текста по названию должности —
 // оно берётся из выбранных JobTitle). Единственная запись в таблице.
 model SearchCriteria {
-  id             String   @id @default("singleton")
+  id        String   @id @default("singleton")
   // JSON-массивы строк (например ["Россия","Казахстан"]) — хранятся как
   // текст по тому же принципу, что и Source.config, т.к. SQLite не
-  // поддерживает нативные списки в Prisma.
-  countries      String   @default("[]")
-  regions        String   @default("[]")
-  cities         String   @default("[]")
-  employmentType String?
-  salaryMin      Int?
-  remoteOnly     Boolean  @default(false)
-  updatedAt      DateTime @updatedAt
+  // поддерживает нативные списки в Prisma. Пустой список = без ограничения
+  // по этому полю (поиск ведётся по всем направлениям).
+  countries String   @default("[]")
+  cities    String   @default("[]")
+  updatedAt DateTime @updatedAt
 }
 
 model Vacancy {

@@ -73,7 +73,7 @@ async function main() {
   await prisma.searchCriteria.upsert({
     where: { id: 'singleton' },
     update: {},
-    create: { id: 'singleton', remoteOnly: false },
+    create: { id: 'singleton' },
   });
 
   console.log(`Seeded ${sources.length} sources and default search criteria.`);

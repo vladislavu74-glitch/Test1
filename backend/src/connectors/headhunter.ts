@@ -40,8 +40,6 @@ export const headHunterConnector: JobSourceConnector = {
       order_by: 'publication_time',
     });
     if (cfg.areaId !== undefined) params.set('area', String(cfg.areaId));
-    if (criteria.salaryMin) params.set('salary', String(criteria.salaryMin));
-    if (criteria.remoteOnly) params.set('schedule', 'remote');
 
     const response = await fetch(`https://api.hh.ru/vacancies?${params.toString()}`, {
       headers: { 'User-Agent': 'JobMonitorApp/1.0 (personal use)' },

@@ -3,6 +3,8 @@ import { superJobConnector } from './superjob';
 import { habrCareerConnector } from './habrCareer';
 import { atsBoardConnector } from './atsBoard';
 import { rssFeedConnector } from './rssFeed';
+import { genericSiteConnector } from './genericSite';
+import { telegramChannelConnector } from './telegramChannel';
 import type { JobSourceConnector, SourceRecord } from './types';
 
 const registry: Record<string, JobSourceConnector> = {
@@ -11,6 +13,8 @@ const registry: Record<string, JobSourceConnector> = {
   [habrCareerConnector.key]: habrCareerConnector,
   [atsBoardConnector.key]: atsBoardConnector,
   [rssFeedConnector.key]: rssFeedConnector,
+  [genericSiteConnector.key]: genericSiteConnector,
+  [telegramChannelConnector.key]: telegramChannelConnector,
 };
 
 // Каждый Source.config — это JSON с полем "connector", называющим один из

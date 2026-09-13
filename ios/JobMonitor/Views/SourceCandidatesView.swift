@@ -33,19 +33,27 @@ struct SourceCandidatesView: View {
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                case .agency:
-                    TextField("https://example.com", text: $viewModel.newAgencyUrl)
+                case .agency, .site:
+                    TextField("https://example.com", text: $viewModel.newUrl)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                case .telegram:
+                    TextField("Имя канала (без @)", text: $viewModel.newChannelUsername)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
+
+                Text(viewModel.newType.hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Button("Добавить в каталог") { Task { await viewModel.addCandidate() } }
                     .disabled(viewModel.newName.trimmingCharacters(in: .whitespaces).isEmpty)
             } header: {
                 Text("Новый кандидат")
             } footer: {
-                Text("boardSlug для Greenhouse/Lever виден в адресе карьерной страницы: boards.greenhouse.io/<slug> или jobs.lever.co/<slug>. Для «Кадровое агентство» достаточно адреса сайта — backend сам проверит его по критериям (позиционирование, услуги для работодателей, форма заявки, условия, кейсы) и определит, агентство ли это, доска объявлений или репозиторий вакансий работодателя.")
+                Text("«Сайт компании» и «Кадровое агентство» не требуют API — backend сам обойдёт типовые разделы сайта (вакансии, карьера), а для агентства ещё и проверит его по критериям (позиционирование, услуги, кейсы), чтобы отличить агентство от доски объявлений или сайта работодателя.")
             }
 
             Section {

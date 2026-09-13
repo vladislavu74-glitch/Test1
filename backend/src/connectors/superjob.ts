@@ -32,8 +32,6 @@ export const superJobConnector: JobSourceConnector = {
       order_field: 'date',
       order_direction: 'desc',
     });
-    if (criteria.salaryMin) params.set('payment_from', String(criteria.salaryMin));
-    if (criteria.remoteOnly) params.set('remote_work', '1');
 
     const response = await fetch(`https://api.superjob.ru/2.0/vacancies/?${params.toString()}`, {
       headers: { 'X-Api-App-Id': config.superJobApiKey },

@@ -42,19 +42,36 @@ struct SourceCandidate: Identifiable, Codable, Equatable {
 }
 
 enum CandidateType: String, CaseIterable, Identifiable {
+    case site
+    case telegram
+    case agency
+    case rss
     case greenhouse
     case lever
-    case rss
-    case agency
 
     var id: String { rawValue }
 
+    /// Понятное название на русском для выбора в списке.
     var title: String {
         switch self {
-        case .greenhouse: return "Greenhouse (по boardSlug)"
-        case .lever: return "Lever (по boardSlug)"
-        case .rss: return "RSS/Atom-лента (по URL)"
-        case .agency: return "Кадровое агентство (по адресу сайта)"
+        case .site: return "Сайт компании — сами найдём вакансии"
+        case .telegram: return "Канал в Telegram"
+        case .agency: return "Кадровое агентство — проверим по критериям"
+        case .rss: return "RSS-лента вакансий"
+        case .greenhouse: return "Карьерная страница на платформе Greenhouse"
+        case .lever: return "Карьерная страница на платформе Lever"
+        }
+    }
+
+    /// Короткое пояснение под выбором — что именно нужно ввести.
+    var hint: String {
+        switch self {
+        case .site: return "Укажите адрес сайта — мы сами обойдём типовые разделы (вакансии, карьера) и найдём подходящие объявления."
+        case .telegram: return "Укажите имя канала без @, например: myjobschannel."
+        case .agency: return "Укажите адрес сайта — мы проверим его по критериям кадрового агентства (позиционирование, услуги, кейсы)."
+        case .rss: return "Укажите прямую ссылку на RSS/Atom-ленту вакансий."
+        case .greenhouse: return "Укажите код компании (boardSlug) — виден в адресе её карьерной страницы: boards.greenhouse.io/<код>."
+        case .lever: return "Укажите код компании (boardSlug) — виден в адресе её карьерной страницы: jobs.lever.co/<код>."
         }
     }
 }

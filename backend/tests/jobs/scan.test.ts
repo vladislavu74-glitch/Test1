@@ -143,7 +143,7 @@ describe('runScan', () => {
     expect(state?.hidden).toBe(true);
   });
 
-  it('filters out vacancies whose location does not match the configured countries/regions/cities', async () => {
+  it('filters out vacancies whose location does not match the configured countries/cities', async () => {
     await prisma.searchCriteria.create({
       data: { id: 'singleton', cities: JSON.stringify(['Алматы']) },
     });

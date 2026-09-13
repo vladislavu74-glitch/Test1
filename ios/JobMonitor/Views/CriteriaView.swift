@@ -15,26 +15,12 @@ struct CriteriaView: View {
         NavigationStack {
             Form {
                 GeographyListEditor(title: "Страны", placeholder: "Например: Россия", items: $viewModel.criteria.countries)
-                GeographyListEditor(title: "Регионы", placeholder: "Например: Московская область", items: $viewModel.criteria.regions)
                 GeographyListEditor(title: "Города", placeholder: "Например: Алматы", items: $viewModel.criteria.cities)
 
-                Section("Тип занятости") {
-                    TextField("Например: полная занятость", text: Binding(
-                        get: { viewModel.criteria.employmentType ?? "" },
-                        set: { viewModel.criteria.employmentType = $0.isEmpty ? nil : $0 }
-                    ))
-                }
-
-                Section("Зарплата") {
-                    TextField("Минимальная зарплата (0 — без ограничения)", value: Binding(
-                        get: { viewModel.criteria.salaryMin ?? 0 },
-                        set: { viewModel.criteria.salaryMin = $0 == 0 ? nil : $0 }
-                    ), format: .number)
-                        .keyboardType(.numberPad)
-                }
-
                 Section {
-                    Toggle("Только удалённая работа", isOn: $viewModel.criteria.remoteOnly)
+                    Text("Если не указать ни одной страны или города — поиск ведётся без ограничения по географии, по всем направлениям.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Критерии поиска")

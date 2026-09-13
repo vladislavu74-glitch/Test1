@@ -20,11 +20,7 @@ describe('atsBoardConnector', () => {
   const criteria: ScanCriteria = {
     jobTitle: 'Backend',
     countries: [],
-    regions: [],
     cities: [],
-    employmentType: null,
-    salaryMin: null,
-    remoteOnly: false,
   };
 
   it('fetches and filters Greenhouse jobs by title', async () => {

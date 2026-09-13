@@ -10,10 +10,11 @@ final class SourceCandidatesViewModel: ObservableObject {
 
     @Published var newName = ""
     @Published var newCountry = ""
-    @Published var newType: CandidateType = .greenhouse
+    @Published var newType: CandidateType = .site
     @Published var newBoardSlug = ""
     @Published var newFeedUrl = ""
-    @Published var newAgencyUrl = ""
+    @Published var newUrl = ""
+    @Published var newChannelUsername = ""
 
     private let client: APIClient
 
@@ -44,7 +45,7 @@ final class SourceCandidatesViewModel: ObservableObject {
             case .greenhouse, .lever:
                 let slug = newBoardSlug.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !slug.isEmpty else {
-                    errorMessage = "Укажите boardSlug (виден в адресе карьерной страницы компании)."
+                    errorMessage = "Укажите код компании (boardSlug)."
                     return
                 }
                 _ = try await client.addSourceCandidate(
@@ -67,10 +68,10 @@ final class SourceCandidatesViewModel: ObservableObject {
                     boardSlug: nil,
                     feedUrl: url
                 )
-            case .agency:
-                let url = newAgencyUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .agency, .site:
+                let url = newUrl.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !url.isEmpty else {
-                    errorMessage = "Укажите адрес сайта для проверки."
+                    errorMessage = "Укажите адрес сайта."
                     return
                 }
                 _ = try await client.addSourceCandidate(
@@ -81,12 +82,27 @@ final class SourceCandidatesViewModel: ObservableObject {
                     feedUrl: nil,
                     url: url
                 )
+            case .telegram:
+                let username = newChannelUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !username.isEmpty else {
+                    errorMessage = "Укажите имя канала (без @)."
+                    return
+                }
+                _ = try await client.addSourceCandidate(
+                    name: trimmedName,
+                    country: newCountry.isEmpty ? nil : newCountry,
+                    type: newType,
+                    boardSlug: nil,
+                    feedUrl: nil,
+                    channelUsername: username
+                )
             }
             newName = ""
             newCountry = ""
             newBoardSlug = ""
             newFeedUrl = ""
-            newAgencyUrl = ""
+            newUrl = ""
+            newChannelUsername = ""
             await load()
         } catch {
             errorMessage = error.localizedDescription

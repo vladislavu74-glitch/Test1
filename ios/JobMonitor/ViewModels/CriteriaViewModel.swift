@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 final class CriteriaViewModel: ObservableObject {
-    @Published var criteria = SearchCriteria(countries: [], regions: [], cities: [], employmentType: nil, salaryMin: nil, remoteOnly: false)
+    @Published var criteria = SearchCriteria(countries: [], cities: [])
     @Published var isLoading = false
     @Published var isSaving = false
     @Published var errorMessage: String?

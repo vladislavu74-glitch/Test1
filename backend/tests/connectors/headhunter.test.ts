@@ -19,11 +19,7 @@ describe('headHunterConnector', () => {
   const criteria: ScanCriteria = {
     jobTitle: 'iOS Developer',
     countries: [],
-    regions: [],
     cities: [],
-    employmentType: null,
-    salaryMin: null,
-    remoteOnly: false,
   };
 
   it('normalizes vacancies with real URLs and dates', async () => {

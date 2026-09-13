@@ -57,7 +57,6 @@ struct JobTitlesView: View {
                 }
             }
             .navigationTitle("Названия должностей")
-            .toolbar { EditButton() }
             .task { await viewModel.load() }
             .refreshable { await viewModel.load() }
             .alert(

@@ -113,6 +113,7 @@ final class APIClient {
         let boardSlug: String?
         let feedUrl: String?
         let url: String?
+        let channelUsername: String?
     }
 
     func addSourceCandidate(
@@ -121,9 +122,10 @@ final class APIClient {
         type: CandidateType,
         boardSlug: String?,
         feedUrl: String?,
-        url: String? = nil
+        url: String? = nil,
+        channelUsername: String? = nil
     ) async throws -> SourceCandidate {
-        let body = AddSourceCandidateRequest(name: name, country: country, type: type.rawValue, boardSlug: boardSlug, feedUrl: feedUrl, url: url)
+        let body = AddSourceCandidateRequest(name: name, country: country, type: type.rawValue, boardSlug: boardSlug, feedUrl: feedUrl, url: url, channelUsername: channelUsername)
         return try await post("/api/source-candidates", body: body)
     }
 

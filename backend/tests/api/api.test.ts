@@ -254,15 +254,14 @@ describe('job title rename', () => {
 describe('search criteria', () => {
   it('defaults to empty geography lists and round-trips a PUT', async () => {
     const initial = await request(app).get('/api/criteria').set(authHeader).expect(200);
-    expect(initial.body).toMatchObject({ countries: [], regions: [], cities: [] });
+    expect(initial.body).toMatchObject({ countries: [], cities: [] });
 
     const updated = await request(app)
       .put('/api/criteria')
       .set(authHeader)
-      .send({ countries: ['Россия', 'Казахстан'], regions: ['Московская область'], cities: ['Москва', 'Алматы'] })
+      .send({ countries: ['Россия', 'Казахстан'], cities: ['Москва', 'Алматы'] })
       .expect(200);
     expect(updated.body.countries).toEqual(['Россия', 'Казахстан']);
-    expect(updated.body.regions).toEqual(['Московская область']);
     expect(updated.body.cities).toEqual(['Москва', 'Алматы']);
 
     const fetched = await request(app).get('/api/criteria').set(authHeader).expect(200);

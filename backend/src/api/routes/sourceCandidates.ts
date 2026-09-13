@@ -7,11 +7,13 @@ export const sourceCandidatesRouter = Router();
 interface AddCandidateBody {
   name: string;
   country?: string;
-  // "greenhouse" | "lever" -> ats_board; "rss" -> rss_feed; "agency" -> recruiting_agency
-  type: 'greenhouse' | 'lever' | 'rss' | 'agency';
+  // "greenhouse" | "lever" -> ats_board; "rss" -> rss_feed; "agency" -> recruiting_agency;
+  // "site" -> generic_site; "telegram" -> telegram_channel
+  type: 'greenhouse' | 'lever' | 'rss' | 'agency' | 'site' | 'telegram';
   boardSlug?: string; // требуется для greenhouse/lever
   feedUrl?: string; // требуется для rss
-  url?: string; // требуется для agency — адрес сайта, который нужно классифицировать
+  url?: string; // требуется для agency/site — адрес сайта
+  channelUsername?: string; // требуется для telegram — имя канала без @
 }
 
 sourceCandidatesRouter.get('/', async (_req, res) => {
@@ -26,7 +28,7 @@ sourceCandidatesRouter.post('/', async (req, res) => {
     return;
   }
 
-  let kind: 'ats' | 'rss' | 'recruiting_agency';
+  let kind: 'ats' | 'rss' | 'recruiting_agency' | 'generic_site' | 'telegram_channel';
   let config: Record<string, unknown>;
   let key: string;
 
@@ -54,8 +56,25 @@ sourceCandidatesRouter.post('/', async (req, res) => {
     kind = 'recruiting_agency';
     config = { url: body.url.trim() };
     key = `agency:${body.url.trim()}`;
+  } else if (body.type === 'site') {
+    if (!body.url?.trim()) {
+      res.status(400).json({ error: '"url" is required for site' });
+      return;
+    }
+    kind = 'generic_site';
+    config = { connector: 'generic_site', url: body.url.trim() };
+    key = `site:${body.url.trim()}`;
+  } else if (body.type === 'telegram') {
+    const username = body.channelUsername?.trim().replace(/^@/, '');
+    if (!username) {
+      res.status(400).json({ error: '"channelUsername" is required for telegram' });
+      return;
+    }
+    kind = 'telegram_channel';
+    config = { connector: 'telegram_channel', channelUsername: username };
+    key = `telegram:${username}`;
   } else {
-    res.status(400).json({ error: '"type" must be one of: greenhouse, lever, rss, agency' });
+    res.status(400).json({ error: '"type" must be one of: greenhouse, lever, rss, agency, site, telegram' });
     return;
   }
 
