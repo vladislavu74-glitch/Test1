@@ -14,7 +14,7 @@ final class AppSettings: ObservableObject {
     private static let baseURLKey = "backendBaseURL"
 
     init() {
-        self.baseURLString = UserDefaults.standard.string(forKey: Self.baseURLKey) ?? "http://localhost:4000"
+        self.baseURLString = UserDefaults.standard.string(forKey: Self.baseURLKey) ?? "https://jobmonitor.castleduck.com"
         self.apiToken = KeychainStore.load() ?? ""
     }
 
