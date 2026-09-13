@@ -13,6 +13,7 @@ final class SourceCandidatesViewModel: ObservableObject {
     @Published var newType: CandidateType = .greenhouse
     @Published var newBoardSlug = ""
     @Published var newFeedUrl = ""
+    @Published var newAgencyUrl = ""
 
     private let client: APIClient
 
@@ -66,11 +67,26 @@ final class SourceCandidatesViewModel: ObservableObject {
                     boardSlug: nil,
                     feedUrl: url
                 )
+            case .agency:
+                let url = newAgencyUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !url.isEmpty else {
+                    errorMessage = "Укажите адрес сайта для проверки."
+                    return
+                }
+                _ = try await client.addSourceCandidate(
+                    name: trimmedName,
+                    country: newCountry.isEmpty ? nil : newCountry,
+                    type: newType,
+                    boardSlug: nil,
+                    feedUrl: nil,
+                    url: url
+                )
             }
             newName = ""
             newCountry = ""
             newBoardSlug = ""
             newFeedUrl = ""
+            newAgencyUrl = ""
             await load()
         } catch {
             errorMessage = error.localizedDescription

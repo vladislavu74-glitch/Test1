@@ -26,13 +26,24 @@ struct SourceCandidate: Identifiable, Codable, Equatable {
     let lastCheckError: String?
     let promotedSourceId: String?
 
+    // Заполняются классификатором для kind == "recruiting_agency" —
+    // "pending" | "verified" | "needs_review" | "rejected".
+    let verificationStatus: String?
+    let score: Int?
+    let geography: String?
+    let specialization: String?
+    let evidenceQuote: String?
+    let employerContact: String?
+
     var isPromoted: Bool { promotedSourceId != nil }
+    var isAgency: Bool { kind == "recruiting_agency" }
 }
 
 enum CandidateType: String, CaseIterable, Identifiable {
     case greenhouse
     case lever
     case rss
+    case agency
 
     var id: String { rawValue }
 
@@ -41,6 +52,7 @@ enum CandidateType: String, CaseIterable, Identifiable {
         case .greenhouse: return "Greenhouse (по boardSlug)"
         case .lever: return "Lever (по boardSlug)"
         case .rss: return "RSS/Atom-лента (по URL)"
+        case .agency: return "Кадровое агентство (по адресу сайта)"
         }
     }
 }

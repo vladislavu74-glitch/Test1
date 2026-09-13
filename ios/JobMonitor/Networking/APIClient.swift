@@ -108,10 +108,18 @@ final class APIClient {
         let type: String
         let boardSlug: String?
         let feedUrl: String?
+        let url: String?
     }
 
-    func addSourceCandidate(name: String, country: String?, type: CandidateType, boardSlug: String?, feedUrl: String?) async throws -> SourceCandidate {
-        let body = AddSourceCandidateRequest(name: name, country: country, type: type.rawValue, boardSlug: boardSlug, feedUrl: feedUrl)
+    func addSourceCandidate(
+        name: String,
+        country: String?,
+        type: CandidateType,
+        boardSlug: String?,
+        feedUrl: String?,
+        url: String? = nil
+    ) async throws -> SourceCandidate {
+        let body = AddSourceCandidateRequest(name: name, country: country, type: type.rawValue, boardSlug: boardSlug, feedUrl: feedUrl, url: url)
         return try await post("/api/source-candidates", body: body)
     }
 

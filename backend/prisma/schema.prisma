@@ -36,7 +36,7 @@ model SourceCandidate {
   id               String    @id @default(cuid())
   key              String    @unique
   name             String
-  // "ats" | "rss"
+  // "ats" | "rss" | "recruiting_agency"
   kind             String
   country          String?
   config           String
@@ -45,6 +45,21 @@ model SourceCandidate {
   lastCheckOk      Boolean?
   lastCheckError   String?
   promotedSourceId String?   @unique
+
+  // Заполняются классификатором для kind="recruiting_agency" (см.
+  // src/discovery/agencyClassifier.ts) — эвристическая оценка того,
+  // действительно ли сайт предлагает подбор персонала для сторонних
+  // работодателей, а не просто публикует свои вакансии.
+  // "pending" | "verified" | "needs_review" | "rejected"
+  verificationStatus String  @default("pending")
+  score              Int?
+  geography          String?
+  specialization     String?
+  evidenceQuote      String?
+  employerContact    String?
+  // Что классификатор определил на самом сайте:
+  // "recruiting_agency" | "job_board" | "employer_repository" | "unclear"
+  resourceType       String?
 }
 
 // Список названий должностей, которые пользователь ведёт заранее.

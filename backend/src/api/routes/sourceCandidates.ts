@@ -7,10 +7,11 @@ export const sourceCandidatesRouter = Router();
 interface AddCandidateBody {
   name: string;
   country?: string;
-  // "greenhouse" | "lever" -> ats_board; "rss" -> rss_feed
-  type: 'greenhouse' | 'lever' | 'rss';
+  // "greenhouse" | "lever" -> ats_board; "rss" -> rss_feed; "agency" -> recruiting_agency
+  type: 'greenhouse' | 'lever' | 'rss' | 'agency';
   boardSlug?: string; // требуется для greenhouse/lever
   feedUrl?: string; // требуется для rss
+  url?: string; // требуется для agency — адрес сайта, который нужно классифицировать
 }
 
 sourceCandidatesRouter.get('/', async (_req, res) => {
@@ -25,7 +26,7 @@ sourceCandidatesRouter.post('/', async (req, res) => {
     return;
   }
 
-  let kind: 'ats' | 'rss';
+  let kind: 'ats' | 'rss' | 'recruiting_agency';
   let config: Record<string, unknown>;
   let key: string;
 
@@ -45,8 +46,16 @@ sourceCandidatesRouter.post('/', async (req, res) => {
     kind = 'rss';
     config = { connector: 'rss_feed', feedUrl: body.feedUrl.trim() };
     key = `rss:${body.feedUrl.trim()}`;
+  } else if (body.type === 'agency') {
+    if (!body.url?.trim()) {
+      res.status(400).json({ error: '"url" is required for agency' });
+      return;
+    }
+    kind = 'recruiting_agency';
+    config = { url: body.url.trim() };
+    key = `agency:${body.url.trim()}`;
   } else {
-    res.status(400).json({ error: '"type" must be one of: greenhouse, lever, rss' });
+    res.status(400).json({ error: '"type" must be one of: greenhouse, lever, rss, agency' });
     return;
   }
 
