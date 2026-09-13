@@ -157,7 +157,3 @@ private struct VacancyRow: View {
         .padding(.vertical, 4)
     }
 }
-
-extension URL: Identifiable {
-    public var id: String { absoluteString }
-}

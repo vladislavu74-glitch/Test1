@@ -27,10 +27,14 @@ struct SettingsView: View {
                     if isLoadingLastScan {
                         ProgressView()
                     } else if let lastScan {
-                        LabeledContent("Запущен", value: lastScan.startedAt.formatted(date: .abbreviated, time: .shortened))
-                        LabeledContent("Триггер", value: lastScan.trigger == "cron" ? "по расписанию" : "вручную")
-                        LabeledContent("Новых вакансий", value: "\(lastScan.newVacancies)")
-                        LabeledContent("Письмо отправлено", value: lastScan.emailSent ? "да" : "нет")
+                        let startedAtText: String = lastScan.startedAt.formatted(date: .abbreviated, time: .shortened)
+                        let triggerText: String = lastScan.trigger == "cron" ? "по расписанию" : "вручную"
+                        let newVacanciesText: String = "\(lastScan.newVacancies)"
+                        let emailSentText: String = lastScan.emailSent ? "да" : "нет"
+                        LabeledContent("Запущен", value: startedAtText)
+                        LabeledContent("Триггер", value: triggerText)
+                        LabeledContent("Новых вакансий", value: newVacanciesText)
+                        LabeledContent("Письмо отправлено", value: emailSentText)
                         if let error = lastScan.error, !error.isEmpty {
                             Text(error)
                                 .font(.caption)
