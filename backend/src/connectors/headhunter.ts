@@ -32,6 +32,10 @@ export const headHunterConnector: JobSourceConnector = {
 
     const params = new URLSearchParams({
       text: criteria.jobTitle,
+      // Без этого hh.ru ищет совпадения ещё и в описании/названии компании —
+      // тогда в выдаче попадаются вакансии, чьё название вообще не похоже
+      // на запрошенное. Ограничиваем поиск полем "название вакансии".
+      search_field: 'name',
       per_page: '50',
       order_by: 'publication_time',
     });
@@ -47,15 +51,22 @@ export const headHunterConnector: JobSourceConnector = {
     }
     const data = (await response.json()) as HhVacancyResponse;
 
-    return data.items.map((item) => ({
-      externalId: item.id,
-      title: item.name,
-      company: item.employer?.name,
-      url: item.alternate_url,
-      location: item.area?.name,
-      salaryText: formatSalary(item.salary),
-      publishedAt: new Date(item.published_at),
-    }));
+    // hh.ru даже с search_field=name делает морфологический/нечёткий поиск
+    // (склонения, синонимы), поэтому дополнительно подстраховываемся
+    // клиентской проверкой, что название вакансии реально содержит
+    // запрошенную фразу — как это уже делает коннектор ats_board.
+    const needle = criteria.jobTitle.toLowerCase();
+    return data.items
+      .filter((item) => item.name.toLowerCase().includes(needle))
+      .map((item) => ({
+        externalId: item.id,
+        title: item.name,
+        company: item.employer?.name,
+        url: item.alternate_url,
+        location: item.area?.name,
+        salaryText: formatSalary(item.salary),
+        publishedAt: new Date(item.published_at),
+      }));
   },
 };
 

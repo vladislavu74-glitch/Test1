@@ -22,8 +22,12 @@ export const habrCareerConnector: JobSourceConnector = {
   async search(_source: SourceRecord, criteria: ScanCriteria): Promise<RawVacancy[]> {
     const feed = await parser.parseURL(buildFeedUrl(criteria.jobTitle));
 
+    // RSS-поиск Habr Career ищет по всей вакансии (в т.ч. описание/навыки),
+    // не только по названию — без этой проверки в выдаче попадаются
+    // вакансии, чьё название вообще не похоже на запрошенное.
+    const needle = criteria.jobTitle.toLowerCase();
     return (feed.items ?? [])
-      .filter((item) => item.link)
+      .filter((item) => item.link && item.title?.toLowerCase().includes(needle))
       .map((item) => ({
         externalId: item.guid ?? item.link!,
         title: item.title ?? criteria.jobTitle,

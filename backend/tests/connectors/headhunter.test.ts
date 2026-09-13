@@ -63,6 +63,38 @@ describe('headHunterConnector', () => {
     expect(calledUrl).toContain('area=113');
   });
 
+  it('filters out vacancies whose title does not actually contain the query (hh.ru search is fuzzy)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        items: [
+          {
+            id: '1',
+            name: 'iOS Developer',
+            alternate_url: 'https://hh.ru/vacancy/1',
+            published_at: '2024-05-01T10:00:00+0300',
+          },
+          {
+            id: '2',
+            name: 'Android Developer',
+            alternate_url: 'https://hh.ru/vacancy/2',
+            published_at: '2024-05-01T10:00:00+0300',
+          },
+        ],
+      }),
+    } as Response);
+
+    const result = await headHunterConnector.search(source, criteria);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].externalId).toBe('1');
+
+    const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('search_field=name');
+  });
+
   it('throws on non-ok response', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,

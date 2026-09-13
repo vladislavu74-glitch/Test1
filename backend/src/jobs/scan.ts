@@ -62,7 +62,7 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
         finishedAt: new Date(),
         newVacancies: newlyInsertedVacancyIds.length,
         emailSent,
-        error: errors.length ? errors.join('\n') : undefined,
+        error: errors.length ? summarizeErrors(errors) : undefined,
       },
     });
 
@@ -79,6 +79,22 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
     });
     throw error;
   }
+}
+
+// Одна и та же ошибка коннектора (например, hh.ru временно недоступен)
+// повторяется для каждого выбранного названия должности — без группировки
+// пользователь видит один и тот же текст по 5-10 раз подряд. Схлопываем
+// одинаковые сообщения одного источника в одну строку со счётчиком.
+function summarizeErrors(errors: string[]): string {
+  const counts = new Map<string, number>();
+  for (const raw of errors) {
+    const match = raw.match(/^\[([^/]+) \/ "[^"]*"\] (.*)$/s);
+    const key = match ? `[${match[1].trim()}] ${match[2]}` : raw;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([message, count]) => (count > 1 ? `${message} (×${count})` : message))
+    .join('\n');
 }
 
 function toSourceRecord(source: {

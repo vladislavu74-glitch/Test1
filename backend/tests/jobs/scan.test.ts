@@ -142,4 +142,17 @@ describe('runScan', () => {
     const state = await prisma.vacancyState.findUnique({ where: { vacancyId: vacancy.id } });
     expect(state?.hidden).toBe(true);
   });
+
+  it('collapses the same connector error repeated across job titles into one summarized line', async () => {
+    await prisma.jobTitle.create({ data: { title: 'Android Developer', selected: true } });
+    fakeConnector.search = async () => {
+      throw new Error('hh.ru API error: 403 Forbidden');
+    };
+
+    const result = await runScan('manual');
+
+    expect(result.errors).toHaveLength(2);
+    const scanRun = await prisma.scanRun.findUniqueOrThrow({ where: { id: result.scanRunId } });
+    expect(scanRun.error).toBe('[fake_source] hh.ru API error: 403 Forbidden (×2)');
+  });
 });
