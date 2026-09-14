@@ -4,8 +4,22 @@ private func hideKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
 
+private enum CustomEntryTarget: Identifiable {
+    case country
+    case city(country: String)
+
+    var id: String {
+        switch self {
+        case .country: return "country"
+        case .city(let country): return "city-\(country)"
+        }
+    }
+}
+
 struct CriteriaView: View {
     @StateObject private var viewModel: CriteriaViewModel
+    @State private var customEntryTarget: CustomEntryTarget?
+    @State private var customEntryText = ""
 
     init(client: APIClient) {
         _viewModel = StateObject(wrappedValue: CriteriaViewModel(client: client))
@@ -15,47 +29,56 @@ struct CriteriaView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Сначала выберите страну — под ней появится список городов именно этой страны.")
+                    Text("Выберите страну из выпадающего списка — под ней появится выпадающий список городов именно этой страны.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
 
                 Section("Страны") {
-                    ForEach(GeographyDirectory.countries, id: \.self) { country in
-                        CheckableRow(title: country, isChecked: viewModel.criteria.countries.contains(country)) {
-                            toggleCountry(country)
+                    ForEach(viewModel.criteria.countries, id: \.self) { country in
+                        Text(country)
+                    }
+                    .onDelete { indexSet in
+                        for country in indexSet.map({ viewModel.criteria.countries[$0] }) {
+                            removeCountry(country)
                         }
                     }
-                    CustomValueEditor(placeholder: "Своя страна (если нет в списке)") { value in
-                        guard !viewModel.criteria.countries.contains(value) else { return }
-                        viewModel.criteria.countries.append(value)
-                    }
-                    // Страны, добавленные вручную и не входящие в справочник —
-                    // показываем отдельно, иначе их негде было бы снять.
-                    let customCountries = viewModel.criteria.countries.filter { !GeographyDirectory.countries.contains($0) }
-                    ForEach(customCountries, id: \.self) { country in
-                        CheckableRow(title: country, isChecked: true) {
-                            toggleCountry(country)
+
+                    Menu {
+                        ForEach(availableCountries, id: \.self) { country in
+                            Button(country) { addCountry(country) }
                         }
+                        Button("Другое…") {
+                            customEntryText = ""
+                            customEntryTarget = .country
+                        }
+                    } label: {
+                        Label("Добавить страну", systemImage: "chevron.down.circle")
                     }
                 }
 
                 ForEach(viewModel.criteria.countries, id: \.self) { country in
                     Section("Города — \(country)") {
-                        let directoryCities = GeographyDirectory.cities(for: country)
-                        if directoryCities.isEmpty {
-                            Text("Для этой страны нет справочника городов — добавьте нужные вручную ниже.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+                        let citiesHere = GeographyDirectory.cities(for: country).filter { viewModel.criteria.cities.contains($0) }
+                        ForEach(citiesHere, id: \.self) { city in
+                            Text(city)
                         }
-                        ForEach(directoryCities, id: \.self) { city in
-                            CheckableRow(title: city, isChecked: viewModel.criteria.cities.contains(city)) {
-                                toggleCity(city)
+                        .onDelete { indexSet in
+                            for city in indexSet.map({ citiesHere[$0] }) {
+                                removeCity(city)
                             }
                         }
-                        CustomValueEditor(placeholder: "Свой город (если нет в списке)") { value in
-                            guard !viewModel.criteria.cities.contains(value) else { return }
-                            viewModel.criteria.cities.append(value)
+
+                        Menu {
+                            ForEach(availableCities(for: country), id: \.self) { city in
+                                Button(city) { addCity(city) }
+                            }
+                            Button("Другое…") {
+                                customEntryText = ""
+                                customEntryTarget = .city(country: country)
+                            }
+                        } label: {
+                            Label("Добавить город", systemImage: "chevron.down.circle")
                         }
                     }
                 }
@@ -67,8 +90,11 @@ struct CriteriaView: View {
                 if !customCities.isEmpty {
                     Section("Свои города") {
                         ForEach(customCities, id: \.self) { city in
-                            CheckableRow(title: city, isChecked: true) {
-                                toggleCity(city)
+                            Text(city)
+                        }
+                        .onDelete { indexSet in
+                            for city in indexSet.map({ customCities[$0] }) {
+                                removeCity(city)
                             }
                         }
                     }
@@ -116,68 +142,65 @@ struct CriteriaView: View {
             .alert("Сохранено", isPresented: $viewModel.saved) {
                 Button("OK", role: .cancel) {}
             }
-        }
-    }
-
-    private func toggleCountry(_ country: String) {
-        if let index = viewModel.criteria.countries.firstIndex(of: country) {
-            viewModel.criteria.countries.remove(at: index)
-            // Убираем и города этой страны — без страны они "повисли бы"
-            // в отдельном разделе, который больше не показывается.
-            let cities = Set(GeographyDirectory.cities(for: country))
-            viewModel.criteria.cities.removeAll { cities.contains($0) }
-        } else {
-            viewModel.criteria.countries.append(country)
-        }
-    }
-
-    private func toggleCity(_ city: String) {
-        if let index = viewModel.criteria.cities.firstIndex(of: city) {
-            viewModel.criteria.cities.remove(at: index)
-        } else {
-            viewModel.criteria.cities.append(city)
-        }
-    }
-}
-
-private struct CheckableRow: View {
-    let title: String
-    let isChecked: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                    .foregroundStyle(.primary)
-                Spacer()
-                if isChecked {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(Color.accentColor)
+            .alert(
+                customEntryAlertTitle,
+                isPresented: Binding(
+                    get: { customEntryTarget != nil },
+                    set: { if !$0 { customEntryTarget = nil } }
+                )
+            ) {
+                TextField("Название", text: $customEntryText)
+                    .autocorrectionDisabled()
+                Button("Отмена", role: .cancel) { customEntryTarget = nil }
+                Button("Добавить") {
+                    let trimmed = customEntryText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { customEntryTarget = nil; return }
+                    switch customEntryTarget {
+                    case .country: addCountry(trimmed)
+                    case .city: addCity(trimmed)
+                    case nil: break
+                    }
+                    customEntryTarget = nil
                 }
             }
         }
     }
-}
 
-private struct CustomValueEditor: View {
-    let placeholder: String
-    let onAdd: (String) -> Void
-
-    @State private var newValue = ""
-
-    var body: some View {
-        HStack {
-            TextField(placeholder, text: $newValue)
-                .autocorrectionDisabled()
-            Button("Добавить") {
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                onAdd(trimmed)
-                newValue = ""
-                hideKeyboard()
-            }
-            .disabled(newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    private var customEntryAlertTitle: String {
+        switch customEntryTarget {
+        case .country: return "Своя страна"
+        case .city(let country): return "Свой город (\(country))"
+        case nil: return ""
         }
+    }
+
+    private var availableCountries: [String] {
+        GeographyDirectory.countries.filter { !viewModel.criteria.countries.contains($0) }
+    }
+
+    private func availableCities(for country: String) -> [String] {
+        GeographyDirectory.cities(for: country).filter { !viewModel.criteria.cities.contains($0) }
+    }
+
+    private func addCountry(_ country: String) {
+        guard !viewModel.criteria.countries.contains(country) else { return }
+        viewModel.criteria.countries.append(country)
+    }
+
+    private func removeCountry(_ country: String) {
+        viewModel.criteria.countries.removeAll { $0 == country }
+        // Убираем и города этой страны — без страны они "повисли бы" в
+        // разделе, который больше не показывается.
+        let cities = Set(GeographyDirectory.cities(for: country))
+        viewModel.criteria.cities.removeAll { cities.contains($0) }
+    }
+
+    private func addCity(_ city: String) {
+        guard !viewModel.criteria.cities.contains(city) else { return }
+        viewModel.criteria.cities.append(city)
+    }
+
+    private func removeCity(_ city: String) {
+        viewModel.criteria.cities.removeAll { $0 == city }
     }
 }
