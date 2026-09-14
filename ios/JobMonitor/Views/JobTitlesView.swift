@@ -18,7 +18,7 @@ struct JobTitlesView: View {
                 Section {
                     HStack {
                         TextField("Например: iOS Developer", text: $viewModel.newTitleText)
-                            .textInputAutocapitalization(.words)
+                            .textInputAutocapitalization(.sentences)
                             .submitLabel(.done)
                             .onSubmit { Task { await viewModel.addTitle() } }
                         Button("Добавить") { Task { await viewModel.addTitle() } }
@@ -78,7 +78,7 @@ struct JobTitlesView: View {
                 )
             ) {
                 TextField("Название должности", text: $renameText)
-                    .textInputAutocapitalization(.words)
+                    .textInputAutocapitalization(.sentences)
                 Button("Отмена", role: .cancel) { renamingJobTitle = nil }
                 Button("Сохранить") {
                     if let jobTitle = renamingJobTitle {

@@ -57,7 +57,6 @@ struct VacancyListView: View {
                     .padding(.top, 4)
                     .background(.bar)
                 }
-                .task { await viewModel.load() }
                 .onChange(of: viewModel.filter) { _ in
                     Task { await viewModel.load() }
                 }
@@ -175,4 +174,8 @@ private struct VacancyRow: View {
         .opacity(vacancy.hidden ? 0.5 : 1)
         .padding(.vertical, 4)
     }
+}
+
+extension URL: @retroactive Identifiable {
+    public var id: String { absoluteString }
 }

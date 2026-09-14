@@ -11,7 +11,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Backend") {
+                Section {
                     TextField("http://192.168.1.10:4000", text: $settings.baseURLString)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
@@ -19,6 +19,8 @@ struct SettingsView: View {
                     SecureField("API-токен", text: $settings.apiToken)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                } header: {
+                    Text("Backend")
                 } footer: {
                     Text("Адрес и токен должны совпадать с API_AUTH_TOKEN в .env backend'а. При первом запуске на телефоне через кабель обычно используется локальный IP компьютера с backend'ом в той же Wi-Fi-сети.")
                 }

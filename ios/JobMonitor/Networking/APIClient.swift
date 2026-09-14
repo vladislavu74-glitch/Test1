@@ -38,7 +38,21 @@ final class APIClient {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    init(settings: AppSettings, session: URLSession = .shared) {
+    // URLSession.shared использует общий дисковый URLCache — при частых
+    // повторяющихся запросах к одному и тому же backend'у (как здесь: почти
+    // все вкладки дёргают один и тот же API при каждом открытии) это надёжно
+    // ловит известный краш в CFNetwork (SIGSEGV в
+    // URLConnectionLoader::loadWithWhatToDo, через
+    // continueWithCacheLookupResult) — именно он ронял приложение на всех
+    // вкладках. Собственная сессия без кэша обходит эту проблему.
+    private static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        return URLSession(configuration: configuration)
+    }
+
+    init(settings: AppSettings, session: URLSession = APIClient.makeSession()) {
         self.settings = settings
         self.session = session
 
