@@ -38,21 +38,7 @@ final class APIClient {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    // URLSession.shared использует общий дисковый URLCache — при частых
-    // повторяющихся запросах к одному и тому же backend'у (как здесь: почти
-    // все вкладки дёргают один и тот же API при каждом открытии) это надёжно
-    // ловит известный краш в CFNetwork (SIGSEGV в
-    // URLConnectionLoader::loadWithWhatToDo, через
-    // continueWithCacheLookupResult) — именно он ронял приложение на всех
-    // вкладках. Собственная сессия без кэша обходит эту проблему.
-    private static func makeSession() -> URLSession {
-        let configuration = URLSessionConfiguration.default
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        return URLSession(configuration: configuration)
-    }
-
-    init(settings: AppSettings, session: URLSession = APIClient.makeSession()) {
+    init(settings: AppSettings, session: URLSession = .shared) {
         self.settings = settings
         self.session = session
 
@@ -215,7 +201,13 @@ final class APIClient {
 
     private func makeRequest(_ path: String, method: String, query: [String: String] = [:]) throws -> URLRequest {
         guard !settings.apiToken.isEmpty else { throw APIError.notConfigured }
-        var request = URLRequest(url: try makeURL(path, query: query))
+        // Отключаем кэш на уровне запроса (а не отдельной URLSession — своя
+        // сессия на устройстве почему-то приводила к зависанию запросов).
+        // Без этого повторные запросы к одному backend'у через общий
+        // URLCache у URLSession.shared надёжно ловят известный краш CFNetwork
+        // (SIGSEGV в URLConnectionLoader::loadWithWhatToDo, через
+        // continueWithCacheLookupResult).
+        var request = URLRequest(url: try makeURL(path, query: query), cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = method
         request.setValue("Bearer \(settings.apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

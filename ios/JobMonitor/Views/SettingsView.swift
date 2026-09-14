@@ -7,6 +7,16 @@ struct SettingsView: View {
     @State private var lastScan: ScanRun?
     @State private var isLoadingLastScan = false
     @State private var errorMessage: String?
+    @State private var isNewBuild = false
+
+    private static let lastSeenBuildKey = "lastSeenBuildCommit"
+
+    private var appVersionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
+    }
 
     var body: some View {
         NavigationStack {
@@ -50,9 +60,28 @@ struct SettingsView: View {
                     Button("Обновить") { Task { await loadLastScan() } }
                         .disabled(!settings.isConfigured)
                 }
+
+                Section("О приложении") {
+                    LabeledContent("Версия", value: appVersionText)
+                    HStack {
+                        LabeledContent("Сборка", value: BuildInfo.gitCommitHash)
+                        if isNewBuild {
+                            Text("Обновлено")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    LabeledContent("Собрано", value: BuildInfo.builtAt)
+                }
             }
             .navigationTitle("Настройки")
-            .task { await loadLastScan() }
+            .task {
+                await loadLastScan()
+                checkForNewBuild()
+            }
             .alert(
                 "Ошибка",
                 isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
@@ -73,5 +102,19 @@ struct SettingsView: View {
             errorMessage = error.localizedDescription
         }
         isLoadingLastScan = false
+    }
+
+    // Показывает бейдж "Обновлено" один раз после того, как на устройство
+    // попала новая сборка (по git-коммиту, зашитому в BuildInfo при
+    // компиляции) — сравниваем с последним увиденным коммитом и запоминаем
+    // текущий, чтобы бейдж не показывался повторно при следующих открытиях
+    // вкладки той же сборкой.
+    private func checkForNewBuild() {
+        let current = BuildInfo.gitCommitHash
+        let previous = UserDefaults.standard.string(forKey: Self.lastSeenBuildKey)
+        if previous != current {
+            isNewBuild = true
+            UserDefaults.standard.set(current, forKey: Self.lastSeenBuildKey)
+        }
     }
 }

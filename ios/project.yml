@@ -12,6 +12,23 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - path: JobMonitor
+    preBuildScripts:
+      - name: Generate BuildInfo.swift
+        script: |
+          set -e
+          COMMIT=$(git -C "$SRCROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+          mkdir -p "$SRCROOT/JobMonitor/Generated"
+          cat > "$SRCROOT/JobMonitor/Generated/BuildInfo.swift" <<SWIFT
+          // Автогенерируется build-скриптом (project.yml) перед каждой сборкой — не редактировать вручную.
+          enum BuildInfo {
+              static let gitCommitHash = "$COMMIT"
+              static let builtAt = "$DATE"
+          }
+          SWIFT
+        outputFiles:
+          - $(SRCROOT)/JobMonitor/Generated/BuildInfo.swift
+        basedOnDependencyAnalysis: false
     info:
       path: JobMonitor/Info.plist
       properties:
