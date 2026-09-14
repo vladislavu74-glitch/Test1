@@ -21,6 +21,22 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("О приложении") {
+                    LabeledContent("Версия", value: appVersionText)
+                    HStack {
+                        LabeledContent("Сборка", value: BuildInfo.gitCommitHash)
+                        if isNewBuild {
+                            Text("Обновлено")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    LabeledContent("Собрано", value: BuildInfo.builtAt)
+                }
+
                 Section {
                     TextField("http://192.168.1.10:4000", text: $settings.baseURLString)
                         .keyboardType(.URL)
@@ -48,6 +64,9 @@ struct SettingsView: View {
                         LabeledContent("Новых вакансий", value: newVacanciesText)
                         LabeledContent("Письмо отправлено", value: emailSentText)
                         if let error = lastScan.error, !error.isEmpty {
+                            Text("Не удалось проверить эти источники (сайт заблокировал запрос, не настроен ключ доступа и т.п.) — на сами найденные вакансии это не влияет, ошибки только по перечисленным ниже:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             Text(error)
                                 .font(.caption)
                                 .foregroundStyle(.red)
@@ -59,22 +78,6 @@ struct SettingsView: View {
 
                     Button("Обновить") { Task { await loadLastScan() } }
                         .disabled(!settings.isConfigured)
-                }
-
-                Section("О приложении") {
-                    LabeledContent("Версия", value: appVersionText)
-                    HStack {
-                        LabeledContent("Сборка", value: BuildInfo.gitCommitHash)
-                        if isNewBuild {
-                            Text("Обновлено")
-                                .font(.caption2.bold())
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.green, in: Capsule())
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    LabeledContent("Собрано", value: BuildInfo.builtAt)
                 }
             }
             .navigationTitle("Настройки")
