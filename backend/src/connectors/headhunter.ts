@@ -1,4 +1,4 @@
-import type { JobSourceConnector, RawVacancy, ScanCriteria, SourceRecord } from './types';
+import { matchesJobTitle, type JobSourceConnector, type RawVacancy, type ScanCriteria, type SourceRecord } from './types';
 
 // Публичный API hh.ru (https://api.hh.ru/vacancies, документация:
 // https://github.com/hhru/api/blob/master/docs/vacancies.md).
@@ -53,9 +53,8 @@ export const headHunterConnector: JobSourceConnector = {
     // (склонения, синонимы), поэтому дополнительно подстраховываемся
     // клиентской проверкой, что название вакансии реально содержит
     // запрошенную фразу — как это уже делает коннектор ats_board.
-    const needle = criteria.jobTitle.toLowerCase();
     return data.items
-      .filter((item) => item.name.toLowerCase().includes(needle))
+      .filter((item) => matchesJobTitle(item.name, criteria.jobTitle))
       .map((item) => ({
         externalId: item.id,
         title: item.name,

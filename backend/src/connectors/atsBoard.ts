@@ -1,4 +1,4 @@
-import type { JobSourceConnector, RawVacancy, ScanCriteria, SourceRecord } from './types';
+import { matchesJobTitle, type JobSourceConnector, type RawVacancy, type ScanCriteria, type SourceRecord } from './types';
 
 // Многие компании публикуют свои вакансии через типовые ATS (системы
 // подбора персонала), у которых есть публичные read-only JSON API,
@@ -41,8 +41,7 @@ export const atsBoardConnector: JobSourceConnector = {
         ? await fetchGreenhouse(cfg.boardSlug)
         : await fetchLever(cfg.boardSlug);
 
-    const needle = criteria.jobTitle.toLowerCase();
-    return all.filter((vacancy) => vacancy.title.toLowerCase().includes(needle));
+    return all.filter((vacancy) => matchesJobTitle(vacancy.title, criteria.jobTitle));
   },
 
   // Для автообнаружения: просто убеждаемся, что доска существует и отдаёт

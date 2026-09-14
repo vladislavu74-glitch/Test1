@@ -1,5 +1,5 @@
 import Parser from 'rss-parser';
-import type { JobSourceConnector, RawVacancy, ScanCriteria, SourceRecord } from './types';
+import { matchesJobTitle, type JobSourceConnector, type RawVacancy, type ScanCriteria, type SourceRecord } from './types';
 
 // Habr Career (career.habr.com) не предоставляет официального публичного
 // поискового API. Этот коннектор использует их RSS-ленту вакансий по
@@ -25,9 +25,8 @@ export const habrCareerConnector: JobSourceConnector = {
     // RSS-поиск Habr Career ищет по всей вакансии (в т.ч. описание/навыки),
     // не только по названию — без этой проверки в выдаче попадаются
     // вакансии, чьё название вообще не похоже на запрошенное.
-    const needle = criteria.jobTitle.toLowerCase();
     return (feed.items ?? [])
-      .filter((item) => item.link && item.title?.toLowerCase().includes(needle))
+      .filter((item) => item.link && item.title && matchesJobTitle(item.title, criteria.jobTitle))
       .map((item) => ({
         externalId: item.guid ?? item.link!,
         title: item.title ?? criteria.jobTitle,

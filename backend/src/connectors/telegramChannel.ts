@@ -1,4 +1,4 @@
-import type { JobSourceConnector, RawVacancy, ScanCriteria, SourceRecord } from './types';
+import { matchesJobTitle, type JobSourceConnector, type RawVacancy, type ScanCriteria, type SourceRecord } from './types';
 
 // Публичная веб-версия Telegram (t.me/s/<channel>) отдаёт HTML-превью
 // последних постов канала без какой-либо авторизации или API — подходит
@@ -85,10 +85,9 @@ export const telegramChannelConnector: JobSourceConnector = {
   async search(source: SourceRecord, criteria: ScanCriteria): Promise<RawVacancy[]> {
     const cfg: TelegramChannelConfig = JSON.parse(source.config);
     const html = await fetchPreview(cfg.channelUsername);
-    const needle = criteria.jobTitle.toLowerCase();
 
     return parseMessages(html)
-      .filter((m) => m.text.toLowerCase().includes(needle))
+      .filter((m) => matchesJobTitle(m.text, criteria.jobTitle))
       .map((m) => ({
         externalId: m.id,
         title: m.text.split('\n')[0].slice(0, 200),

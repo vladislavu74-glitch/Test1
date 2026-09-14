@@ -37,3 +37,35 @@ export interface JobSourceConnector {
   // кандидатов (они и так уже в списке источников).
   probe?(source: SourceRecord): Promise<void>;
 }
+
+const STOPWORDS = new Set([
+  'по', 'в', 'во', 'и', 'для', 'с', 'со', 'на', 'от', 'до', 'из', 'к', 'о', 'об',
+  'the', 'of', 'for', 'and', 'a', 'an', 'to', 'in',
+]);
+
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+// Грубый учёт словоизменений (падежи, дефисные составные вроде "IT-директор"):
+// отбрасываем последние 2 символа у слов длиннее 5 — обычно этого достаточно,
+// чтобы остался неизменяемый корень слова.
+function stem(word: string): string {
+  return word.length > 5 ? word.slice(0, word.length - 2) : word;
+}
+
+// "Адаптивное" совпадение по названию должности. Требовать, чтобы вакансия
+// содержала весь запрос одной подстрокой ("Директор по информационным
+// технологиям"), почти никогда не работает — реальные вакансии называются
+// иначе ("IT-директор", "Директор по ИТ", "CIO / Директор по информационным
+// технологиям"). Вместо этого проверяем, что каждое значимое слово запроса
+// (без предлогов/союзов, с учётом словоизменений через stem()) встречается
+// в названии вакансии — независимо от порядка слов.
+export function matchesJobTitle(candidateText: string, jobTitle: string): boolean {
+  const allWords = wordsOf(jobTitle);
+  const significant = allWords.filter((w) => !STOPWORDS.has(w));
+  const words = significant.length > 0 ? significant : allWords;
+  if (words.length === 0) return true;
+  const haystack = candidateText.toLowerCase();
+  return words.every((w) => haystack.includes(stem(w)));
+}
