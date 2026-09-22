@@ -1,28 +1,39 @@
-import type { JobSourceConnector, RawVacancy, ScanCriteria, SourceRecord } from './types';
+import { matchesJobTitle, type JobSourceConnector, type RawVacancy, type ScanCriteria, type SourceRecord } from './types';
 
-// Публичный API hh.ru (https://api.hh.ru/vacancies, документация:
-// https://github.com/hhru/api/blob/master/docs/vacancies.md).
-// hh.ru обслуживает не только Россию: дерево регионов (`GET /areas`) включает
-// Казахстан, Беларусь, Узбекистан, Киргизию и другие страны СНГ в виде
-// отдельных поддеревьев area. Перед боевым использованием стоит свериться с
-// `GET https://api.hh.ru/areas` и подставить актуальные areaId в конфиг
-// соответствующего Source (см. prisma seed) — они могут меняться.
+// api.hh.ru блокирует запросы с IP этого сервера через DDoS-Guard (403 на
+// любой запрос, независимо от заголовков) — сам сайт hh.ru при этом
+// открывается нормально. Поэтому вместо официального API парсим страницу
+// поиска: hh.ru — это React-приложение с серверным рендерингом, и все
+// найденные вакансии уже лежат структурированным JSON во встроенном
+// <template id="HH-Lux-InitialState"> — не нужно даже парсить HTML-вёрстку
+// карточек, только вытащить и распарсить этот блок.
 interface HeadHunterConfig {
   connector: 'headhunter';
   areaId?: number; // например 113 = Россия (по данным справочника hh на момент написания)
 }
 
-interface HhVacancyResponse {
-  items: Array<{
-    id: string;
-    name: string;
-    alternate_url: string;
-    published_at: string;
-    employer?: { name?: string };
-    area?: { name?: string };
-    salary?: { from?: number | null; to?: number | null; currency?: string | null } | null;
-  }>;
+interface HhStateVacancy {
+  vacancyId: number;
+  name: string;
+  company?: { name?: string };
+  area?: { name?: string };
+  compensation?: {
+    from?: number;
+    to?: number;
+    currencyCode?: string;
+    noCompensation?: unknown;
+  };
+  publicationTime?: { $?: string };
+  links?: { desktop?: string };
 }
+
+interface HhInitialState {
+  vacancySearchResult?: {
+    vacancies?: HhStateVacancy[];
+  };
+}
+
+const STATE_TEMPLATE_REGEX = /<template[^>]*id="HH-Lux-InitialState"[^>]*>([\s\S]*?)<\/template>/;
 
 export const headHunterConnector: JobSourceConnector = {
   key: 'headhunter',
@@ -32,47 +43,73 @@ export const headHunterConnector: JobSourceConnector = {
 
     const params = new URLSearchParams({
       text: criteria.jobTitle,
-      // Без этого hh.ru ищет совпадения ещё и в описании/названии компании —
-      // тогда в выдаче попадаются вакансии, чьё название вообще не похоже
-      // на запрошенное. Ограничиваем поиск полем "название вакансии".
-      search_field: 'name',
-      per_page: '50',
       order_by: 'publication_time',
     });
     if (cfg.areaId !== undefined) params.set('area', String(cfg.areaId));
 
-    const response = await fetch(`https://api.hh.ru/vacancies?${params.toString()}`, {
-      headers: { 'User-Agent': 'JobMonitorApp/1.0 (personal use)' },
+    const response = await fetch(`https://hh.ru/search/vacancy?${params.toString()}`, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+      },
     });
     if (!response.ok) {
-      throw new Error(`hh.ru API error: ${response.status} ${response.statusText}`);
+      throw new Error(`hh.ru error: ${response.status} ${response.statusText}`);
     }
-    const data = (await response.json()) as HhVacancyResponse;
+    const html = await response.text();
+    const vacancies = extractVacancies(html);
 
-    // hh.ru даже с search_field=name делает морфологический/нечёткий поиск
-    // (склонения, синонимы), поэтому дополнительно подстраховываемся
-    // клиентской проверкой, что название вакансии реально содержит
-    // запрошенную фразу — как это уже делает коннектор ats_board.
-    const needle = criteria.jobTitle.toLowerCase();
-    return data.items
-      .filter((item) => item.name.toLowerCase().includes(needle))
-      .map((item) => ({
-        externalId: item.id,
-        title: item.name,
-        company: item.employer?.name,
-        url: item.alternate_url,
-        location: item.area?.name,
-        salaryText: formatSalary(item.salary),
-        publishedAt: new Date(item.published_at),
+    // hh.ru делает морфологический/нечёткий поиск, поэтому дополнительно
+    // подстраховываемся клиентской проверкой названия — как и другие коннекторы.
+    return vacancies
+      .filter((v) => matchesJobTitle(v.name, criteria.jobTitle))
+      .map((v) => ({
+        externalId: String(v.vacancyId),
+        title: v.name,
+        company: v.company?.name,
+        url: v.links?.desktop ?? `https://hh.ru/vacancy/${v.vacancyId}`,
+        location: v.area?.name,
+        salaryText: formatSalary(v.compensation),
+        publishedAt: v.publicationTime?.$ ? new Date(v.publicationTime.$) : new Date(),
       }));
   },
 };
 
-function formatSalary(salary: HhVacancyResponse['items'][number]['salary']): string | undefined {
-  if (!salary) return undefined;
+function extractVacancies(html: string): HhStateVacancy[] {
+  const match = STATE_TEMPLATE_REGEX.exec(html);
+  if (!match) {
+    throw new Error(
+      'hh.ru: не найден блок HH-Lux-InitialState на странице поиска — вёрстка сайта могла измениться',
+    );
+  }
+  let state: HhInitialState;
+  try {
+    state = JSON.parse(decodeHtmlEntities(match[1]));
+  } catch {
+    throw new Error('hh.ru: не удалось разобрать встроенное состояние страницы поиска');
+  }
+  return state.vacancySearchResult?.vacancies ?? [];
+}
+
+// hh.ru отдаёт этот JSON HTML-экранированным (внутри содержимого <template>),
+// поэтому кавычки и спецсимволы закодированы как числовые/именованные
+// HTML-сущности — раскодируем их перед JSON.parse.
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function formatSalary(compensation?: HhStateVacancy['compensation']): string | undefined {
+  if (!compensation || compensation.noCompensation !== undefined) return undefined;
   const parts: string[] = [];
-  if (salary.from) parts.push(`от ${salary.from}`);
-  if (salary.to) parts.push(`до ${salary.to}`);
-  if (salary.currency) parts.push(salary.currency);
+  if (compensation.from) parts.push(`от ${compensation.from}`);
+  if (compensation.to) parts.push(`до ${compensation.to}`);
+  if (compensation.currencyCode) parts.push(compensation.currencyCode);
   return parts.length ? parts.join(' ') : undefined;
 }

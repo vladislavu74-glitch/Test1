@@ -29,6 +29,5 @@ struct RootTabView: View {
             SettingsView(client: client)
                 .tabItem { Label("Настройки", systemImage: "gearshape") }
         }
-        .task { await badge.refresh() }
     }
 }

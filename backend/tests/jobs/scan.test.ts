@@ -159,6 +159,23 @@ describe('runScan', () => {
     expect(vacancy.location).toBe('Алматы');
   });
 
+  it('keeps vacancies whose location is not stated at all, even with a geography filter set', async () => {
+    await prisma.searchCriteria.create({
+      data: { id: 'singleton', cities: JSON.stringify(['Алматы']) },
+    });
+    fakeVacancies = [
+      // Многие источники (Habr Career, RSS-ленты, Telegram-каналы) вообще не
+      // отдают location — такие вакансии не должны отбрасываться фильтром
+      // по географии, иначе он тихо обнулял бы результаты именно там, где
+      // сам неприменим.
+      { externalId: 'v1', title: 'iOS Developer', url: 'https://example.com/v1', publishedAt: new Date('2024-01-01') },
+    ];
+
+    const result = await runScan('manual');
+
+    expect(result.newVacancyCount).toBe(1);
+  });
+
   it('collapses the same connector error repeated across job titles into one summarized line', async () => {
     await prisma.jobTitle.create({ data: { title: 'Android Developer', selected: true } });
     fakeConnector.search = async () => {

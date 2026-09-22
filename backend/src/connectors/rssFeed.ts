@@ -1,5 +1,5 @@
 import Parser from 'rss-parser';
-import type { JobSourceConnector, RawVacancy, ScanCriteria, SourceRecord } from './types';
+import { matchesJobTitle, type JobSourceConnector, type RawVacancy, type ScanCriteria, type SourceRecord } from './types';
 
 // Универсальный коннектор для любой RSS/Atom-ленты вакансий. Позволяет
 // пользователю добавить произвольный региональный агрегатор или доску,
@@ -19,10 +19,9 @@ export const rssFeedConnector: JobSourceConnector = {
   async search(source: SourceRecord, criteria: ScanCriteria): Promise<RawVacancy[]> {
     const cfg: RssFeedConfig = JSON.parse(source.config);
     const feed = await parser.parseURL(cfg.feedUrl);
-    const needle = criteria.jobTitle.toLowerCase();
 
     return (feed.items ?? [])
-      .filter((item) => item.link && (item.title ?? '').toLowerCase().includes(needle))
+      .filter((item) => item.link && matchesJobTitle(item.title ?? '', criteria.jobTitle))
       .map((item) => ({
         externalId: item.guid ?? item.link!,
         title: item.title!,

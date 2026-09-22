@@ -57,7 +57,6 @@ struct VacancyListView: View {
                     .padding(.top, 4)
                     .background(.bar)
                 }
-                .task { await viewModel.load() }
                 .onChange(of: viewModel.filter) { _ in
                     Task { await viewModel.load() }
                 }
@@ -97,29 +96,29 @@ struct VacancyListView: View {
             )
         } else {
             List(viewModel.vacancies) { vacancy in
-                VacancyRow(vacancy: vacancy)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if let url = URL(string: vacancy.url) {
-                            selectedURL = url
+                VacancyRow(vacancy: vacancy) {
+                    if let url = URL(string: vacancy.url) {
+                        selectedURL = url
+                    }
+                }
+                .swipeActions(edge: .trailing) {
+                    if vacancy.hidden {
+                        Button {
+                            Task { await viewModel.unhide(vacancy) }
+                        } label: {
+                            Label("Показать", systemImage: "eye")
+                        }
+                        .tint(.blue)
+                    } else {
+                        Button(role: .destructive) {
+                            Task { await viewModel.hide(vacancy) }
+                        } label: {
+                            Label("Скрыть", systemImage: "eye.slash")
                         }
                     }
-                    .swipeActions(edge: .trailing) {
-                        if vacancy.hidden {
-                            Button {
-                                Task { await viewModel.unhide(vacancy) }
-                            } label: {
-                                Label("Показать", systemImage: "eye")
-                            }
-                            .tint(.blue)
-                        } else {
-                            Button(role: .destructive) {
-                                Task { await viewModel.hide(vacancy) }
-                            } label: {
-                                Label("Скрыть", systemImage: "eye.slash")
-                            }
-                        }
-                    }
+                }
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
             .listStyle(.plain)
         }
@@ -128,12 +127,18 @@ struct VacancyListView: View {
 
 private struct VacancyRow: View {
     let vacancy: Vacancy
+    let onOpen: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(vacancy.title)
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                Button(action: onOpen) {
+                    Text(vacancy.title)
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                        .multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
                 if vacancy.isNew && !vacancy.hidden {
                     Text("Новое")
                         .font(.caption2.bold())
@@ -142,12 +147,18 @@ private struct VacancyRow: View {
                         .background(Color.accentColor, in: Capsule())
                         .foregroundStyle(.white)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if vacancy.hidden {
                     Image(systemName: "eye.slash")
                         .foregroundStyle(.secondary)
                 }
             }
+
+            if let salary = vacancy.salaryText, !salary.isEmpty {
+                Text(salary)
+                    .font(.subheadline)
+            }
+
             HStack(spacing: 4) {
                 if let company = vacancy.company, !company.isEmpty {
                     Text(company)
@@ -164,15 +175,30 @@ private struct VacancyRow: View {
                 Text(vacancy.sourceName)
                 Text("·")
                 Text(vacancy.publishedAt, style: .relative)
-                if let salary = vacancy.salaryText, !salary.isEmpty {
-                    Text("·")
-                    Text(salary)
-                }
             }
             .font(.caption)
             .foregroundStyle(.tertiary)
+
+            Button(action: onOpen) {
+                Text("Посмотреть вакансию")
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+            .background(Color.accentColor.opacity(0.15), in: Capsule())
+            .foregroundStyle(Color.accentColor)
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+        )
         .opacity(vacancy.hidden ? 0.5 : 1)
-        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
+}
+
+extension URL: @retroactive Identifiable {
+    public var id: String { absoluteString }
 }

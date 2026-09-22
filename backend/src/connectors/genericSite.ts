@@ -1,4 +1,4 @@
-import type { JobSourceConnector, RawVacancy, ScanCriteria, SourceRecord } from './types';
+import { matchesJobTitle, type JobSourceConnector, type RawVacancy, type ScanCriteria, type SourceRecord } from './types';
 
 // Универсальный коннектор "просто прочитать и распарсить сайт компании" —
 // без официального API. Пользователь добавляет любой адрес сайта, а
@@ -89,7 +89,7 @@ function extractJsonLdJobPostings(html: string, pageUrl: string): RawVacancy[] {
   return results;
 }
 
-function extractHeuristicLinks(html: string, pageUrl: string, needle: string): RawVacancy[] {
+function extractHeuristicLinks(html: string, pageUrl: string, jobTitle: string): RawVacancy[] {
   const results: RawVacancy[] = [];
   const anchorRegex = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let match: RegExpExecArray | null;
@@ -104,7 +104,7 @@ function extractHeuristicLinks(html: string, pageUrl: string, needle: string): R
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!text || text.length > 160 || !text.toLowerCase().includes(needle)) continue;
+    if (!text || text.length > 160 || !matchesJobTitle(text, jobTitle)) continue;
     let absoluteUrl: string;
     try {
       absoluteUrl = new URL(match[1], base).toString();
@@ -122,7 +122,6 @@ export const genericSiteConnector: JobSourceConnector = {
   async search(source: SourceRecord, criteria: ScanCriteria): Promise<RawVacancy[]> {
     const cfg: GenericSiteConfig = JSON.parse(source.config);
     const base = cfg.url.replace(/\/$/, '');
-    const needle = criteria.jobTitle.toLowerCase();
 
     const pages = (
       await Promise.all(
@@ -141,12 +140,12 @@ export const genericSiteConnector: JobSourceConnector = {
     const found = new Map<string, RawVacancy>();
     for (const page of pages) {
       for (const v of extractJsonLdJobPostings(page.html, page.url)) {
-        if (v.title.toLowerCase().includes(needle)) found.set(v.externalId, v);
+        if (matchesJobTitle(v.title, criteria.jobTitle)) found.set(v.externalId, v);
       }
     }
     if (found.size === 0) {
       for (const page of pages) {
-        for (const v of extractHeuristicLinks(page.html, page.url, needle)) {
+        for (const v of extractHeuristicLinks(page.html, page.url, criteria.jobTitle)) {
           found.set(v.externalId, v);
         }
       }

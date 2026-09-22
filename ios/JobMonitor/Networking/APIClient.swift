@@ -201,7 +201,13 @@ final class APIClient {
 
     private func makeRequest(_ path: String, method: String, query: [String: String] = [:]) throws -> URLRequest {
         guard !settings.apiToken.isEmpty else { throw APIError.notConfigured }
-        var request = URLRequest(url: try makeURL(path, query: query))
+        // Отключаем кэш на уровне запроса (а не отдельной URLSession — своя
+        // сессия на устройстве почему-то приводила к зависанию запросов).
+        // Без этого повторные запросы к одному backend'у через общий
+        // URLCache у URLSession.shared надёжно ловят известный краш CFNetwork
+        // (SIGSEGV в URLConnectionLoader::loadWithWhatToDo, через
+        // continueWithCacheLookupResult).
+        var request = URLRequest(url: try makeURL(path, query: query), cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = method
         request.setValue("Bearer \(settings.apiToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
