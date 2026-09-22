@@ -141,6 +141,49 @@ final class APIClient {
         try await getOptional("/api/scan/last-discovery")
     }
 
+    // MARK: - Hiring resources (поиск и верификация ресурсов найма)
+
+    struct HiringResourceFilter {
+        var category: String?
+        var status: String?
+        var minScore: Int?
+    }
+
+    func fetchHiringResources(filter: HiringResourceFilter = .init()) async throws -> [HiringResource] {
+        var query: [String: String] = [:]
+        if let category = filter.category { query["category"] = category }
+        if let status = filter.status { query["status"] = status }
+        if let minScore = filter.minScore { query["minScore"] = String(minScore) }
+        return try await get("/api/hiring-resources", query: query)
+    }
+
+    func fetchHiringResource(id: String) async throws -> HiringResourceDetail {
+        try await get("/api/hiring-resources/\(id)")
+    }
+
+    func fetchHiringResourceSummary() async throws -> HiringResourceSummary {
+        try await get("/api/hiring-resources/summary")
+    }
+
+    func markAllHiringResourcesSeen() async throws {
+        try await post("/api/hiring-resources/mark-all-seen", body: EmptyBody())
+    }
+
+    /// Запускает поиск в фоне на backend'е — сразу возвращает id запуска, не
+    /// дожидаясь завершения (может занять несколько минут). Прогресс — через
+    /// fetchHiringResourceRun(id:), опрашиваемый по таймеру.
+    func startHiringResourceDiscovery(params: HiringResourceRunParams) async throws -> StartDiscoveryResponse {
+        try await post("/api/hiring-resources/discover", body: params)
+    }
+
+    func fetchHiringResourceRun(id: String) async throws -> HiringResourceRun {
+        try await get("/api/hiring-resources/runs/\(id)")
+    }
+
+    func fetchHiringResourceRuns() async throws -> [HiringResourceRun] {
+        try await get("/api/hiring-resources/runs/list")
+    }
+
     // MARK: - Job titles
 
     func fetchJobTitles() async throws -> [JobTitle] {

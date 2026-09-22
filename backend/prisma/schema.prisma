@@ -164,3 +164,116 @@ model AiDiscoveryRun {
   added      Int       @default(0)
   error      String?
 }
+
+// ==== Поиск и верификация РЕСУРСОВ НАЙМА (не вакансий) ====
+// Отдельная функция агента: находит и проверяет ресурсы, которые нанимают,
+// подбирают персонал для клиентов или публикуют вакансии — сайты, каналы,
+// сообщества, соцстраницы. Единица результата — ресурс, а не вакансия (см.
+// src/discovery/hiringResourceAgent.ts). Независима от SourceCandidate/Source
+// (те — для мониторинга вакансий конкретных уже известных источников).
+
+// Организация — для дедупликации: сайт агентства и его Telegram-канал
+// физически разные ресурсы (HiringResource), но могут принадлежать одной
+// организации. Итоги считают ресурсы и организации отдельно (п.8 требования).
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  resources HiringResource[]
+}
+
+model HiringResource {
+  id   String @id @default(cuid())
+  name String
+  // Нормализованный адрес (без меток/редиректов) — по нему определяются дубли.
+  url  String @unique
+
+  // "recruiting_agency" | "hr_agency" | "direct_employer" | "telegram" |
+  // "community" | "social" | "job_board"
+  category String
+  // JSON-массив ролей ресурса (можно несколько): "hires_own" |
+  // "sources_for_clients" | "distributes_vacancies"
+  roles    String @default("[]")
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  // География найма (где ищут сотрудников) — отдельно от местонахождения
+  // самой организации/агентства, как требует п.7.
+  hiringGeography String?
+  agencyLocation  String?
+  specialization  String?
+
+  evidenceSummary  String
+  evidenceUrl      String
+  lastRelevantDate DateTime?
+  contactMethod    String?
+  publicContact    String?
+
+  // "confirmed" | "needs_review" | "excluded"
+  status          String
+  exclusionReason String?
+  relatedResources String? // JSON-массив URL связанных ресурсов той же организации
+  uncertainties   String?
+
+  score         Int @default(0)
+  scoreGeoSpec  Int @default(0) // соответствие географии/специализации, до 30
+  scoreEvidence Int @default(0) // убедительность доказательств, до 30
+  scoreRecency  Int @default(0) // актуальность, до 25
+  scoreContact  Int @default(0) // способ обращения, до 15
+
+  // Найден в этом запуске впервые — снимается GET /api/hiring-resources/mark-all-seen
+  // (тот же паттерн, что и isNew у Vacancy).
+  isNew Boolean @default(true)
+  // true, если ресурс был подтверждён/на проверке в одном из прошлых запусков,
+  // чья область поиска (категория) пересекается с последним запуском, но сам
+  // ресурс не был повторно найден/подтверждён в этом запуске — то есть
+  // "перестал откликаться при поиске". Сбрасывается в false, как только
+  // ресурс снова встречается в результатах.
+  isStale Boolean @default(false)
+
+  checkedAt   DateTime @default(now())
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runId String?
+  run   HiringResourceRun? @relation(fields: [runId], references: [id])
+
+  @@index([category])
+  @@index([status])
+  @@index([organizationId])
+}
+
+// Журнал запусков поиска ресурсов найма — хранит заданные параметры (п.1,
+// с явными допущениями там, где параметр не задан) и итоговый отчёт (п.10):
+// сколько найдено по каждому статусу, какие фильтры использовались,
+// ограничения доступа и что не удалось покрыть.
+model HiringResourceRun {
+  id         String    @id @default(cuid())
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  trigger    String // всегда "manual" — обновление источников запускается только кнопкой в приложении, без крона
+  // "running" | "done" | "error" — приложение опрашивает это поле, чтобы
+  // показать статус-бар во время долгого поиска.
+  status     String    @default("running")
+
+  // Входные параметры запуска, включая явные допущения по незаданным
+  // полям — см. HiringResourceRunParams в src/discovery/types.ts.
+  paramsJson String
+
+  confirmedCount   Int @default(0)
+  needsReviewCount Int @default(0)
+  excludedCount    Int @default(0)
+  organizationCount Int @default(0)
+
+  // Список категорий/условий, которые не удалось покрыть (п.10) — JSON-массив строк.
+  limitations String @default("[]")
+
+  queriesUsed Int @default(0)
+  error       String?
+
+  resources HiringResource[]
+}

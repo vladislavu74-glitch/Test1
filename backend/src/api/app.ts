@@ -7,6 +7,7 @@ import { criteriaRouter } from './routes/criteria';
 import { vacanciesRouter } from './routes/vacancies';
 import { scanRouter } from './routes/scan';
 import { sourceCandidatesRouter } from './routes/sourceCandidates';
+import { hiringResourcesRouter } from './routes/hiringResources';
 
 export function createApp(): Express {
   const app = express();
@@ -21,6 +22,7 @@ export function createApp(): Express {
   app.use('/api/vacancies', requireAuth, vacanciesRouter);
   app.use('/api/scan', requireAuth, scanRouter);
   app.use('/api/source-candidates', requireAuth, sourceCandidatesRouter);
+  app.use('/api/hiring-resources', requireAuth, hiringResourcesRouter);
 
   return app;
 }
