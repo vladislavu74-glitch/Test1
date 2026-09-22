@@ -60,6 +60,9 @@ model SourceCandidate {
   // Что классификатор определил на самом сайте:
   // "recruiting_agency" | "job_board" | "employer_repository" | "unclear"
   resourceType       String?
+  // true — кандидат нашёл ИИ-агент веб-поиска (см. AiDiscoveryRun), а не
+  // пользователь вручную через приложение.
+  foundByAi          Boolean @default(false)
 }
 
 // Список названий должностей, которые пользователь ведёт заранее.
@@ -142,4 +145,22 @@ model DiscoveryRun {
   checked        Int      @default(0)
   promoted       Int      @default(0)
   error          String?
+}
+
+// Журнал запусков ИИ-агента веб-поиска источников вакансий (см.
+// src/discovery/aiSourceSearchAgent.ts) — ищет через Claude + веб-поиск
+// сайты компаний/агентств и Telegram-каналы под текущие названия должностей
+// и географию, найденное добавляется в каталог SourceCandidate (с
+// foundByAi=true) и затем проверяется обычным DiscoveryRun, как и кандидаты,
+// добавленные пользователем вручную.
+model AiDiscoveryRun {
+  id         String    @id @default(cuid())
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  trigger    String // "cron" | "manual"
+  // JSON-массив названий должностей, с которыми искали в этом запуске.
+  jobTitles  String    @default("[]")
+  found      Int       @default(0)
+  added      Int       @default(0)
+  error      String?
 }

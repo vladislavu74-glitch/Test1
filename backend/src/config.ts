@@ -13,6 +13,10 @@ export const config = {
   apiAuthToken: required('API_AUTH_TOKEN', 'dev-only-token'),
   superJobApiKey: process.env.SUPERJOB_API_KEY ?? '',
   resendApiKey: process.env.RESEND_API_KEY ?? '',
+  // Используется агентом веб-поиска источников вакансий (см.
+  // src/discovery/aiSourceSearchAgent.ts) — без ключа этот функционал
+  // просто недоступен, остальной backend работает как обычно.
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
   // Без верифицированного домена в Resend отправлять с этого адреса можно
   // только на email, на который зарегистрирован сам аккаунт Resend — см.
   // src/mail/mailer.ts и backend/README.md.
