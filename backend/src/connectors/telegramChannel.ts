@@ -95,9 +95,4 @@ export const telegramChannelConnector: JobSourceConnector = {
         publishedAt: m.publishedAt,
       }));
   },
-
-  async probe(source: SourceRecord): Promise<void> {
-    const cfg: TelegramChannelConfig = JSON.parse(source.config);
-    await fetchPreview(cfg.channelUsername);
-  },
 };

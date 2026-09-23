@@ -18,11 +18,13 @@ export interface RawVacancy {
   publishedAt: Date;
 }
 
+// Построен на лету из подтверждённого HiringResource перед каждым сканом
+// (см. src/jobs/scan.ts) — не хранится в БД отдельной записью.
 export interface SourceRecord {
   id: string;
   key: string;
   name: string;
-  kind: 'api' | 'ats' | 'rss' | 'recruiting_agency' | 'generic_site' | 'telegram_channel';
+  kind: 'generic_site' | 'telegram_channel';
   country?: string | null;
   config: string;
 }
@@ -30,12 +32,6 @@ export interface SourceRecord {
 export interface JobSourceConnector {
   key: string;
   search(source: SourceRecord, criteria: ScanCriteria): Promise<RawVacancy[]>;
-  // Необязательная лёгкая проверка "жив ли ресурс и правда ли отдаёт вакансии",
-  // без фильтрации по названию должности. Используется при автообнаружении
-  // источников (см. src/jobs/discoverSources.ts) — коннекторы вакансионных
-  // API (hh.ru/SuperJob/Habr) его не реализуют, т.к. не участвуют в каталоге
-  // кандидатов (они и так уже в списке источников).
-  probe?(source: SourceRecord): Promise<void>;
 }
 
 const STOPWORDS = new Set([

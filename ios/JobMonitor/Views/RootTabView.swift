@@ -20,9 +20,6 @@ struct RootTabView: View {
             JobTitlesView(client: client)
                 .tabItem { Label("Должности", systemImage: "checklist") }
 
-            SourcesView(client: client)
-                .tabItem { Label("Источники", systemImage: "server.rack") }
-
             HiringResourcesView(client: client)
                 .tabItem { Label("Ресурсы найма", systemImage: "building.2.crop.circle") }
 

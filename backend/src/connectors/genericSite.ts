@@ -153,10 +153,4 @@ export const genericSiteConnector: JobSourceConnector = {
 
     return Array.from(found.values());
   },
-
-  async probe(source: SourceRecord): Promise<void> {
-    const cfg: GenericSiteConfig = JSON.parse(source.config);
-    const html = await fetchPage(cfg.url);
-    if (!html) throw new Error(`Сайт ${cfg.url} недоступен`);
-  },
 };

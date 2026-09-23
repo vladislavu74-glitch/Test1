@@ -92,57 +92,6 @@ final class APIClient {
         try await delete("/api/vacancies")
     }
 
-    // MARK: - Sources
-
-    func fetchSources() async throws -> [JobSource] {
-        try await get("/api/sources")
-    }
-
-    func setSourceEnabled(id: String, enabled: Bool) async throws {
-        try await patch("/api/sources/\(id)", body: ["enabled": enabled])
-    }
-
-    // MARK: - Source discovery (каталог кандидатов)
-
-    func fetchSourceCandidates() async throws -> [SourceCandidate] {
-        try await get("/api/source-candidates")
-    }
-
-    struct AddSourceCandidateRequest: Encodable {
-        let name: String
-        let country: String?
-        let type: String
-        let boardSlug: String?
-        let feedUrl: String?
-        let url: String?
-        let channelUsername: String?
-    }
-
-    func addSourceCandidate(
-        name: String,
-        country: String?,
-        type: CandidateType,
-        boardSlug: String?,
-        feedUrl: String?,
-        url: String? = nil,
-        channelUsername: String? = nil
-    ) async throws -> SourceCandidate {
-        let body = AddSourceCandidateRequest(name: name, country: country, type: type.rawValue, boardSlug: boardSlug, feedUrl: feedUrl, url: url, channelUsername: channelUsername)
-        return try await post("/api/source-candidates", body: body)
-    }
-
-    func deleteSourceCandidate(id: String) async throws {
-        try await delete("/api/source-candidates/\(id)")
-    }
-
-    func runDiscoveryNow() async throws -> DiscoveryResult {
-        try await post("/api/source-candidates/discover", body: EmptyBody())
-    }
-
-    func fetchLastDiscovery() async throws -> DiscoveryRun? {
-        try await getOptional("/api/scan/last-discovery")
-    }
-
     // MARK: - Hiring resources (поиск и верификация ресурсов найма)
 
     struct HiringResourceFilter {

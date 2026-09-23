@@ -17,7 +17,7 @@ vacanciesRouter.get('/', async (req, res) => {
 
   const vacancies = await prisma.vacancy.findMany({
     where,
-    include: { source: true, state: true },
+    include: { hiringResource: true, state: true },
     orderBy: { publishedAt: 'desc' },
   });
 
@@ -37,7 +37,7 @@ vacanciesRouter.get('/', async (req, res) => {
       location: v.location,
       salaryText: v.salaryText,
       publishedAt: v.publishedAt,
-      sourceName: v.source.name,
+      sourceName: v.hiringResource.name,
       hidden: v.state?.hidden ?? false,
       isNew,
     })),

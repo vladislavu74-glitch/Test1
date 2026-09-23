@@ -11,24 +11,17 @@ import fs from 'fs';
 import path from 'path';
 import { runScan } from '../../src/jobs/scan';
 import { prisma } from '../../src/db/client';
-import { connectorRegistry } from '../../src/connectors';
-import type { JobSourceConnector, RawVacancy } from '../../src/connectors/types';
+import { genericSiteConnector } from '../../src/connectors/genericSite';
+import type { RawVacancy } from '../../src/connectors/types';
 
 const backendRoot = path.resolve(__dirname, '../..');
 const testDbPath = path.join(backendRoot, 'test-scan.sqlite');
 
 let fakeVacancies: RawVacancy[] = [];
-
-const fakeConnector: JobSourceConnector = {
-  key: 'fake',
-  async search() {
-    return fakeVacancies;
-  },
-};
+let searchSpy: jest.SpyInstance;
 
 beforeAll(() => {
   execSync('npx prisma migrate deploy', { cwd: backendRoot, env: process.env, stdio: 'ignore' });
-  connectorRegistry[fakeConnector.key] = fakeConnector;
 });
 
 const originalFetch = global.fetch;
@@ -47,18 +40,30 @@ beforeEach(async () => {
   await prisma.vacancy.deleteMany();
   await prisma.scanRun.deleteMany();
   await prisma.jobTitle.deleteMany();
-  await prisma.source.deleteMany();
+  await prisma.hiringResource.deleteMany();
   await prisma.searchCriteria.deleteMany();
 
-  await prisma.source.create({
+  // Любой confirmed HiringResource без category="telegram" сканируется через
+  // genericSiteConnector (см. toSourceRecord в src/jobs/scan.ts) — подменяем
+  // его search(), а не регистрируем отдельный фейковый коннектор, так как
+  // выбор коннектора теперь целиком определяется категорией, а не хранимым конфигом.
+  searchSpy = jest.spyOn(genericSiteConnector, 'search').mockImplementation(async () => fakeVacancies);
+
+  await prisma.hiringResource.create({
     data: {
-      key: 'fake_source',
-      name: 'Fake Source',
-      kind: 'api',
-      config: JSON.stringify({ connector: 'fake' }),
+      name: 'Fake Resource',
+      url: 'https://fake-resource.example/',
+      category: 'direct_employer',
+      status: 'confirmed',
+      evidenceSummary: 'x',
+      evidenceUrl: 'https://fake-resource.example/careers',
     },
   });
   await prisma.jobTitle.create({ data: { title: 'iOS Developer', selected: true } });
+});
+
+afterEach(() => {
+  searchSpy.mockRestore();
 });
 
 describe('runScan', () => {
@@ -80,6 +85,24 @@ describe('runScan', () => {
 
     const vacancy = await prisma.vacancy.findFirst({ include: { state: true } });
     expect(vacancy?.state?.hidden).toBe(false);
+  });
+
+  it('does not scan resources outside the scannable categories (e.g. recruiting agencies)', async () => {
+    await prisma.hiringResource.create({
+      data: {
+        name: 'Some Agency', url: 'https://agency.example/', category: 'recruiting_agency', status: 'confirmed',
+        evidenceSummary: 'x', evidenceUrl: 'https://agency.example/uslugi',
+      },
+    });
+    fakeVacancies = [
+      { externalId: 'v1', title: 'iOS Developer', url: 'https://example.com/v1', publishedAt: new Date('2024-01-01') },
+    ];
+
+    await runScan('manual');
+
+    // genericSiteConnector.search должен был вызваться только для
+    // "Fake Resource" (direct_employer), не для агентства.
+    expect(searchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('does not duplicate vacancies already seen on a later scan', async () => {
@@ -164,10 +187,9 @@ describe('runScan', () => {
       data: { id: 'singleton', cities: JSON.stringify(['Алматы']) },
     });
     fakeVacancies = [
-      // Многие источники (Habr Career, RSS-ленты, Telegram-каналы) вообще не
-      // отдают location — такие вакансии не должны отбрасываться фильтром
-      // по географии, иначе он тихо обнулял бы результаты именно там, где
-      // сам неприменим.
+      // Многие источники (Telegram-каналы и т.п.) вообще не отдают location —
+      // такие вакансии не должны отбрасываться фильтром по географии, иначе
+      // он тихо обнулял бы результаты именно там, где сам неприменим.
       { externalId: 'v1', title: 'iOS Developer', url: 'https://example.com/v1', publishedAt: new Date('2024-01-01') },
     ];
 
@@ -178,14 +200,14 @@ describe('runScan', () => {
 
   it('collapses the same connector error repeated across job titles into one summarized line', async () => {
     await prisma.jobTitle.create({ data: { title: 'Android Developer', selected: true } });
-    fakeConnector.search = async () => {
-      throw new Error('hh.ru API error: 403 Forbidden');
-    };
+    searchSpy.mockImplementation(async () => {
+      throw new Error('Сайт example.com недоступен');
+    });
 
     const result = await runScan('manual');
 
     expect(result.errors).toHaveLength(2);
     const scanRun = await prisma.scanRun.findUniqueOrThrow({ where: { id: result.scanRunId } });
-    expect(scanRun.error).toBe('[fake_source] hh.ru API error: 403 Forbidden (×2)');
+    expect(scanRun.error).toBe('[Fake Resource] Сайт example.com недоступен (×2)');
   });
 });

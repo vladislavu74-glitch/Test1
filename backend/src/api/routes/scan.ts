@@ -17,8 +17,3 @@ scanRouter.get('/last', async (_req, res) => {
   const last = await prisma.scanRun.findFirst({ orderBy: { startedAt: 'desc' } });
   res.json(last);
 });
-
-scanRouter.get('/last-discovery', async (_req, res) => {
-  const last = await prisma.discoveryRun.findFirst({ orderBy: { startedAt: 'desc' } });
-  res.json(last);
-});

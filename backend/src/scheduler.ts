@@ -1,21 +1,16 @@
 import cron from 'node-cron';
 import { config } from './config';
 import { runScan } from './jobs/scan';
-import { runDiscovery } from './jobs/discoverSources';
 
 export function startScheduler(): void {
-  // Каждый день в 10:00 по таймзоне CRON_TZ (по умолчанию Europe/Moscow).
-  // Сначала автообнаружение новых источников (каталог кандидатов), затем
-  // обычный скан вакансий — так свежепромотированные источники сразу
-  // участвуют в скане того же дня.
+  // Каждый день в 10:00 по таймзоне CRON_TZ (по умолчанию Europe/Moscow) —
+  // сканирует вакансии по уже подтверждённым HiringResource. Сам поиск
+  // ресурсов найма запускается только вручную кнопкой в приложении (см.
+  // discoverHiringResources.ts) — дорогая по токенам ИИ-операция, по
+  // расписанию не запускается.
   cron.schedule(
     '0 10 * * *',
     async () => {
-      try {
-        await runDiscovery('cron');
-      } catch (error) {
-        console.error('Scheduled discovery failed:', error);
-      }
       try {
         await runScan('cron');
       } catch (error) {
@@ -25,5 +20,5 @@ export function startScheduler(): void {
     { timezone: config.cronTz },
   );
 
-  console.log(`Scheduler started: daily discovery + scan at 10:00 (${config.cronTz})`);
+  console.log(`Scheduler started: daily scan at 10:00 (${config.cronTz})`);
 }

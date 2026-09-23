@@ -7,64 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Source {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  name      String
-  // "api" | "ats" | "rss" — SQLite не поддерживает enum в Prisma, проверяется в коде.
-  kind      String
-  country   String?
-  enabled   Boolean  @default(true)
-  // true — источник появился сам через ежедневное автообнаружение (см. SourceCandidate),
-  // а не был добавлен вручную через seed/БД.
-  discovered Boolean @default(false)
-  // Free-form per-connector config, e.g. {"provider":"greenhouse","boardSlug":"acme"} or {"feedUrl":"https://..."}
-  config    String   @default("{}")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  vacancies Vacancy[]
-}
-
-// Каталог кандидатов на добавление в мониторинг (сайты рекрутинговых
-// компаний/агентств). Пользователь пополняет каталог сам (через API/приложение,
-// т.к. у нас нет достоверного списка конкретных агентств) — при ежедневном
-// автообнаружении каждый ещё не подтверждённый кандидат проверяется, и если
-// ресурс реально отдаёт вакансии, для него автоматически создаётся Source
-// (список источников поиска), после чего он участвует в обычном скане вакансий.
-model SourceCandidate {
-  id               String    @id @default(cuid())
-  key              String    @unique
-  name             String
-  // "ats" | "rss" | "recruiting_agency"
-  kind             String
-  country          String?
-  config           String
-  addedAt          DateTime  @default(now())
-  lastCheckedAt    DateTime?
-  lastCheckOk      Boolean?
-  lastCheckError   String?
-  promotedSourceId String?   @unique
-
-  // Заполняются классификатором для kind="recruiting_agency" (см.
-  // src/discovery/agencyClassifier.ts) — эвристическая оценка того,
-  // действительно ли сайт предлагает подбор персонала для сторонних
-  // работодателей, а не просто публикует свои вакансии.
-  // "pending" | "verified" | "needs_review" | "rejected"
-  verificationStatus String  @default("pending")
-  score              Int?
-  geography          String?
-  specialization     String?
-  evidenceQuote      String?
-  employerContact    String?
-  // Что классификатор определил на самом сайте:
-  // "recruiting_agency" | "job_board" | "employer_repository" | "unclear"
-  resourceType       String?
-  // true — кандидат нашёл ИИ-агент веб-поиска (см. AiDiscoveryRun), а не
-  // пользователь вручную через приложение.
-  foundByAi          Boolean @default(false)
-}
-
 // Список названий должностей, которые пользователь ведёт заранее.
 // При поиске используются только те, у которых selected = true.
 model JobTitle {
@@ -88,23 +30,23 @@ model SearchCriteria {
 }
 
 model Vacancy {
-  id          String   @id @default(cuid())
-  sourceId    String
-  source      Source   @relation(fields: [sourceId], references: [id])
-  externalId  String
-  title       String
-  company     String?
-  url         String
-  location    String?
-  salaryText  String?
-  publishedAt DateTime
-  firstSeenAt DateTime @default(now())
-  lastSeenAt  DateTime @default(now())
+  id               String         @id @default(cuid())
+  hiringResourceId String
+  hiringResource   HiringResource @relation(fields: [hiringResourceId], references: [id])
+  externalId       String
+  title            String
+  company          String?
+  url              String
+  location         String?
+  salaryText       String?
+  publishedAt      DateTime
+  firstSeenAt      DateTime       @default(now())
+  lastSeenAt       DateTime       @default(now())
 
   state             VacancyState?
   notificationLog   NotificationLog?
 
-  @@unique([sourceId, externalId])
+  @@unique([hiringResourceId, externalId])
   @@index([publishedAt])
 }
 
@@ -136,41 +78,15 @@ model ScanRun {
   error        String?
 }
 
-// Журнал запусков автообнаружения новых источников (см. SourceCandidate).
-model DiscoveryRun {
-  id             String   @id @default(cuid())
-  startedAt      DateTime @default(now())
-  finishedAt     DateTime?
-  trigger        String // "cron" | "manual"
-  checked        Int      @default(0)
-  promoted       Int      @default(0)
-  error          String?
-}
-
-// Журнал запусков ИИ-агента веб-поиска источников вакансий (см.
-// src/discovery/aiSourceSearchAgent.ts) — ищет через Claude + веб-поиск
-// сайты компаний/агентств и Telegram-каналы под текущие названия должностей
-// и географию, найденное добавляется в каталог SourceCandidate (с
-// foundByAi=true) и затем проверяется обычным DiscoveryRun, как и кандидаты,
-// добавленные пользователем вручную.
-model AiDiscoveryRun {
-  id         String    @id @default(cuid())
-  startedAt  DateTime  @default(now())
-  finishedAt DateTime?
-  trigger    String // "cron" | "manual"
-  // JSON-массив названий должностей, с которыми искали в этом запуске.
-  jobTitles  String    @default("[]")
-  found      Int       @default(0)
-  added      Int       @default(0)
-  error      String?
-}
-
 // ==== Поиск и верификация РЕСУРСОВ НАЙМА (не вакансий) ====
-// Отдельная функция агента: находит и проверяет ресурсы, которые нанимают,
-// подбирают персонал для клиентов или публикуют вакансии — сайты, каналы,
-// сообщества, соцстраницы. Единица результата — ресурс, а не вакансия (см.
-// src/discovery/hiringResourceAgent.ts). Независима от SourceCandidate/Source
-// (те — для мониторинга вакансий конкретных уже известных источников).
+// Находит и проверяет ресурсы, которые нанимают, подбирают персонал для
+// клиентов или публикуют вакансии — сайты, каналы, сообщества, соцстраницы.
+// Единица результата — ресурс, а не вакансия (см.
+// src/discovery/hiringResourceAgent.ts). Подтверждённые записи категорий
+// direct_employer/job_board/community/social/telegram — это и есть источники
+// для скана вакансий (см. Vacancy.hiringResource и src/jobs/scan.ts),
+// SourceRecord для коннектора строится на лету из полей ниже, без отдельной
+// технической записи.
 
 // Организация — для дедупликации: сайт агентства и его Telegram-канал
 // физически разные ресурсы (HiringResource), но могут принадлежать одной
@@ -241,6 +157,8 @@ model HiringResource {
 
   runId String?
   run   HiringResourceRun? @relation(fields: [runId], references: [id])
+
+  vacancies Vacancy[]
 
   @@index([category])
   @@index([status])

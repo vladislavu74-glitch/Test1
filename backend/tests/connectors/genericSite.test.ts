@@ -65,8 +65,4 @@ describe('genericSiteConnector', () => {
     await expect(genericSiteConnector.search(source, criteria)).rejects.toThrow(/недоступен/);
   });
 
-  it('probe succeeds when the homepage responds', async () => {
-    mockPages({ '/': '<html></html>' });
-    await expect(genericSiteConnector.probe!(source)).resolves.toBeUndefined();
-  });
 });

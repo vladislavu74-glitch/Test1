@@ -13,13 +13,22 @@ export interface ScanResult {
   errors: string[];
 }
 
+// Категории HiringResource, которые реально можно просканировать без
+// хранимой технической конфигурации — просто по адресу страницы. Агентства
+// (recruiting_agency/hr_agency) работают под заказ для клиентов и не имеют
+// обобщённо парсибельного списка вакансий на своём сайте, поэтому автоматически
+// не сканируются (можно будет открыть их вручную по ссылке из карточки).
+const SCANNABLE_CATEGORIES = ['direct_employer', 'job_board', 'community', 'social', 'telegram'];
+
 export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
   const scanRun = await prisma.scanRun.create({ data: { trigger } });
   const errors: string[] = [];
 
   try {
-    const [sources, jobTitles, criteria] = await Promise.all([
-      prisma.source.findMany({ where: { enabled: true } }),
+    const [resources, jobTitles, criteria] = await Promise.all([
+      prisma.hiringResource.findMany({
+        where: { status: 'confirmed', category: { in: SCANNABLE_CATEGORIES } },
+      }),
       prisma.jobTitle.findMany({ where: { selected: true } }),
       prisma.searchCriteria.findUnique({ where: { id: 'singleton' } }),
     ]);
@@ -37,20 +46,20 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
         cities,
       };
 
-      for (const source of sources) {
+      for (const resource of resources) {
+        const record = toSourceRecord(resource);
+        if (!record) continue; // категория без понятного способа сканирования (не должно случаться из-за фильтра выше)
+
         try {
-          const raw = await resolveConnector(toSourceRecord(source)).search(
-            toSourceRecord(source),
-            scanCriteria,
-          );
+          const raw = await resolveConnector(record).search(record, scanCriteria);
           // Ни один коннектор не умеет сам фильтровать по произвольному
           // списку стран/регионов/городов — делаем это здесь, единообразно
           // для всех источников, по полю location, которое они возвращают.
           const filtered = filterByGeography(raw, geography);
-          const insertedIds = await upsertVacancies(source.id, filtered);
+          const insertedIds = await upsertVacancies(resource.id, filtered);
           newlyInsertedVacancyIds.push(...insertedIds);
         } catch (error) {
-          const message = `[${source.key} / "${jobTitle.title}"] ${(error as Error).message}`;
+          const message = `[${resource.name} / "${jobTitle.title}"] ${(error as Error).message}`;
           errors.push(message);
           console.error(message);
         }
@@ -87,7 +96,7 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
   }
 }
 
-// Одна и та же ошибка коннектора (например, hh.ru временно недоступен)
+// Одна и та же ошибка коннектора (например, сайт временно недоступен)
 // повторяется для каждого выбранного названия должности — без группировки
 // пользователь видит один и тот же текст по 5-10 раз подряд. Схлопываем
 // одинаковые сообщения одного источника в одну строку со счётчиком.
@@ -104,14 +113,13 @@ function summarizeErrors(errors: string[]): string {
 }
 
 // Пустой список стран/регионов/городов означает "без ограничения по
-// географии" — так было и раньше, до этого поля. Если список задан,
-// оставляем только вакансии, чьё location (как его вернул коннектор)
-// содержит хотя бы одно из значений (без учёта регистра).
+// географии". Если список задан, оставляем только вакансии, чьё location
+// (как его вернул коннектор) содержит хотя бы одно из значений (без учёта регистра).
 function filterByGeography(vacancies: RawVacancy[], geography: string[]): RawVacancy[] {
   if (geography.length === 0) return vacancies;
   const needles = geography.map((g) => g.toLowerCase());
   return vacancies.filter((v) => {
-    // Многие источники (Habr Career, RSS-ленты) вообще не отдают location —
+    // Многие источники (Telegram-каналы и т.п.) вообще не отдают location —
     // в этом случае нет оснований считать вакансию несовпадающей, и
     // отбрасывать её означало бы тихо обнулять результаты именно там,
     // где фильтр неприменим, а не там, где город реально не совпал.
@@ -121,32 +129,53 @@ function filterByGeography(vacancies: RawVacancy[], geography: string[]): RawVac
   });
 }
 
-function toSourceRecord(source: {
-  id: string;
-  key: string;
-  name: string;
-  kind: string;
-  country: string | null;
-  config: string;
-}): SourceRecord {
+// Telegram-ссылки встречаются в двух видах: https://t.me/username и
+// https://t.me/s/username (веб-превью) — канал в обоих случаях последний
+// сегмент пути, кроме служебного "s".
+function extractTelegramUsername(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (!/(^|\.)t\.me$/i.test(parsed.hostname)) return null;
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    const username = segments[0] === 's' ? segments[1] : segments[0];
+    return username || null;
+  } catch {
+    return null;
+  }
+}
+
+// Строит SourceRecord для коннектора на лету из подтверждённого
+// HiringResource — никакой отдельной технической записи не хранится.
+function toSourceRecord(resource: { id: string; name: string; url: string; category: string }): SourceRecord | null {
+  if (resource.category === 'telegram') {
+    const channelUsername = extractTelegramUsername(resource.url);
+    if (!channelUsername) return null;
+    return {
+      id: resource.id,
+      key: resource.id,
+      name: resource.name,
+      kind: 'telegram_channel',
+      config: JSON.stringify({ connector: 'telegram_channel', channelUsername }),
+    };
+  }
+
   return {
-    id: source.id,
-    key: source.key,
-    name: source.name,
-    kind: source.kind as SourceRecord['kind'],
-    country: source.country,
-    config: source.config,
+    id: resource.id,
+    key: resource.id,
+    name: resource.name,
+    kind: 'generic_site',
+    config: JSON.stringify({ connector: 'generic_site', url: resource.url }),
   };
 }
 
 // Возвращает id вакансий, которые были ВСТАВЛЕНЫ впервые (а не просто
 // увидены повторно) — именно они считаются "новыми" для email-уведомления.
-async function upsertVacancies(sourceId: string, raw: RawVacancy[]): Promise<string[]> {
+async function upsertVacancies(hiringResourceId: string, raw: RawVacancy[]): Promise<string[]> {
   const insertedIds: string[] = [];
 
   for (const vacancy of raw) {
     const existing = await prisma.vacancy.findUnique({
-      where: { sourceId_externalId: { sourceId, externalId: vacancy.externalId } },
+      where: { hiringResourceId_externalId: { hiringResourceId, externalId: vacancy.externalId } },
     });
 
     if (existing) {
@@ -167,7 +196,7 @@ async function upsertVacancies(sourceId: string, raw: RawVacancy[]): Promise<str
 
     const created = await prisma.vacancy.create({
       data: {
-        sourceId,
+        hiringResourceId,
         externalId: vacancy.externalId,
         title: vacancy.title,
         company: vacancy.company,
@@ -193,7 +222,7 @@ async function notifyNewVacancies(vacancyIds: string[]): Promise<boolean> {
       state: { hidden: false },
       notificationLog: null,
     },
-    include: { source: true },
+    include: { hiringResource: true },
   });
 
   if (vacancies.length === 0) return false;
@@ -206,7 +235,7 @@ async function notifyNewVacancies(vacancyIds: string[]): Promise<boolean> {
     location: v.location ?? undefined,
     salaryText: v.salaryText ?? undefined,
     publishedAt: v.publishedAt,
-    sourceName: v.source.name,
+    sourceName: v.hiringResource.name,
   }));
 
   await sendVacancyDigest(forEmail);
