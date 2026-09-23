@@ -1,10 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Список найденных и проверенных ресурсов найма (сайты, каналы, сообщества,
-/// соцстраницы) — единица результата ресурс, а не вакансия. Поиск запускается
-/// только вручную кнопкой (см. HiringResourceSearchParamsView), не по
-/// расписанию — это дорогая по токенам ИИ-операция.
+/// Вкладка «Источники» — список найденных и проверенных ресурсов найма
+/// (сайты, каналы, сообщества, соцстраницы), по которым идёт скан вакансий.
+/// Единица результата — ресурс, а не вакансия. Поиск запускается только
+/// вручную кнопкой (см. HiringResourceSearchParamsView), не по расписанию —
+/// это дорогая по токенам ИИ-операция.
 struct HiringResourcesView: View {
     @StateObject private var viewModel: HiringResourcesViewModel
 
@@ -54,7 +55,7 @@ struct HiringResourcesView: View {
                     NavigationLink {
                         HiringResourceSearchParamsView(viewModel: viewModel)
                     } label: {
-                        Label(viewModel.isRunning ? "Поиск выполняется…" : "Найти ресурсы найма", systemImage: "sparkle.magnifyingglass")
+                        Label(viewModel.isRunning ? "Поиск выполняется…" : "Найти источники", systemImage: "sparkle.magnifyingglass")
                     }
                     .disabled(viewModel.isRunning)
 
@@ -75,13 +76,33 @@ struct HiringResourcesView: View {
                     .onChange(of: viewModel.categoryFilter) { _ in Task { await viewModel.load() } }
                 }
 
-                Section("Ресурсы (\(viewModel.resources.count))") {
+                Section {
+                    Button {
+                        Task { await viewModel.exportResources() }
+                    } label: {
+                        Label("Экспортировать каталог в файл", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(viewModel.isExporting || viewModel.resources.isEmpty)
+
+                    Button {
+                        viewModel.showImporter = true
+                    } label: {
+                        Label("Импортировать каталог из файла", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(viewModel.isImporting)
+                } header: {
+                    Text("Перенос на другое устройство")
+                } footer: {
+                    Text("Экспорт сохраняет весь текущий каталог источников одним файлом — его можно передать (например, через AirDrop или Файлы) и импортировать в это же приложение на другом устройстве без дублей.")
+                }
+
+                Section("Источники (\(viewModel.resources.count))") {
                     ForEach(viewModel.resources) { resource in
                         resourceRow(resource)
                     }
                 }
             }
-            .navigationTitle("Ресурсы найма")
+            .navigationTitle("Источники")
             .overlay {
                 if viewModel.isLoading && viewModel.resources.isEmpty {
                     ProgressView()
@@ -93,31 +114,12 @@ struct HiringResourcesView: View {
             }
             .refreshable { await viewModel.load() }
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Menu {
-                        Button {
-                            Task { await viewModel.exportResources() }
-                        } label: {
-                            Label("Экспортировать файлом", systemImage: "square.and.arrow.up")
-                        }
-                        .disabled(viewModel.isExporting || viewModel.resources.isEmpty)
-
-                        Button {
-                            viewModel.showImporter = true
-                        } label: {
-                            Label("Импортировать из файла", systemImage: "square.and.arrow.down")
-                        }
-                        .disabled(viewModel.isImporting)
-                    } label: {
-                        if viewModel.isExporting || viewModel.isImporting {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "ellipsis.circle")
-                        }
-                    }
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Просмотрено") { Task { await viewModel.markAllSeen() } }
+                    if viewModel.isExporting || viewModel.isImporting {
+                        ProgressView()
+                    } else {
+                        Button("Просмотрено") { Task { await viewModel.markAllSeen() } }
+                    }
                 }
             }
             .fileExporter(

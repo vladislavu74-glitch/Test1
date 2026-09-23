@@ -21,7 +21,7 @@ struct RootTabView: View {
                 .tabItem { Label("Должности", systemImage: "checklist") }
 
             HiringResourcesView(client: client)
-                .tabItem { Label("Ресурсы найма", systemImage: "building.2.crop.circle") }
+                .tabItem { Label("Источники", systemImage: "building.2.crop.circle") }
 
             CriteriaView(client: client)
                 .tabItem { Label("Критерии", systemImage: "slider.horizontal.3") }

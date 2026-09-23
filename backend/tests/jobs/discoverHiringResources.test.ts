@@ -190,4 +190,38 @@ describe('startHiringResourceDiscovery', () => {
     const stopped = await requestStopHiringResourceDiscovery(run.runId);
     expect(stopped).toBe(false);
   });
+
+  it('excludes a confirmed resource whose geography does not match the requested countries, even if the model reported it as confirmed', async () => {
+    const outOfScope = agency('Moscow Agency', 'https://moscow-agency.example/'); // hiringGeography: 'Москва'
+    mockAgentReporting([outOfScope]);
+
+    const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'], geography: { countries: ['Казахстан'], cities: [], remote: true } });
+    await waitForRunDone(run.runId);
+
+    const saved = await prisma.hiringResource.findUnique({ where: { url: 'https://moscow-agency.example/' } });
+    expect(saved?.status).toBe('excluded');
+    expect(saved?.exclusionReason).toMatch(/Казахстан/);
+  });
+
+  it('keeps a resource confirmed when its geography matches one of the requested countries', async () => {
+    const inScope = { ...agency('Russia-wide Agency', 'https://russia-agency.example/'), hiringGeography: 'по всей России' };
+    mockAgentReporting([inScope]);
+
+    const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'], geography: { countries: ['Россия'], cities: [], remote: true } });
+    await waitForRunDone(run.runId);
+
+    const saved = await prisma.hiringResource.findUnique({ where: { url: 'https://russia-agency.example/' } });
+    expect(saved?.status).toBe('confirmed');
+  });
+
+  it('downgrades a confirmed resource with unknown geography to needs_review instead of trusting it blindly', async () => {
+    const unknownGeo = { ...agency('No Geo Agency', 'https://no-geo-agency.example/'), hiringGeography: 'Не найдено' };
+    mockAgentReporting([unknownGeo]);
+
+    const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'], geography: { countries: ['Казахстан'], cities: [], remote: true } });
+    await waitForRunDone(run.runId);
+
+    const saved = await prisma.hiringResource.findUnique({ where: { url: 'https://no-geo-agency.example/' } });
+    expect(saved?.status).toBe('needs_review');
+  });
 });

@@ -16,6 +16,7 @@
 import { prisma } from '../db/client';
 import { searchHiringResources } from '../discovery/hiringResourceAgent';
 import { normalizeUrl, resolveOrganizationId } from '../discovery/dedupe';
+import { matchesCountry } from '../discovery/geography';
 import { scoreResource } from '../discovery/scoring';
 import {
   DEFAULT_RECENCY_DAYS,
@@ -24,6 +25,40 @@ import {
 } from '../discovery/hiringResourceTypes';
 
 export type RunTrigger = 'manual';
+
+// Модель иногда всё равно подтверждает ресурс с географией найма вне
+// заданного списка стран (промпт — это подсказка, не гарантия) — здесь мы
+// делаем страны реальным обязательным условием отбора, перепроверяя ответ
+// модели независимо от того, каким статусом она его пометила:
+// - география явно не совпадает ни с одной заданной страной → excluded;
+// - модель не смогла установить географию ("Не найдено"/пусто), а сама
+//   заявила confirmed → понижаем до needs_review, а не отбрасываем молча
+//   (раздел 3: невозможность проверить — needs_review, а не тихий дроп).
+function enforceCountryFilter(candidate: HiringResourceCandidate, countries: string[]): HiringResourceCandidate {
+  if (countries.length === 0 || candidate.status === 'excluded') return candidate;
+
+  const geo = candidate.hiringGeography?.trim();
+  if (!geo || geo === 'Не найдено') {
+    if (candidate.status !== 'confirmed') return candidate;
+    return {
+      ...candidate,
+      status: 'needs_review',
+      uncertainties: [candidate.uncertainties, 'География найма не установлена — требуется проверка на соответствие заданным странам.']
+        .filter(Boolean)
+        .join(' '),
+    };
+  }
+
+  if (!matchesCountry(geo, countries)) {
+    return {
+      ...candidate,
+      status: 'excluded',
+      exclusionReason: `География найма («${geo}») не входит в заданный список стран: ${countries.join(', ')}.`,
+    };
+  }
+
+  return candidate;
+}
 
 // Заполняет незаданные пользователем параметры практическими допущениями и
 // явно фиксирует их (раздел 1: "если параметр не задан, агент должен явно
@@ -121,8 +156,9 @@ async function processRun(runId: string, params: HiringResourceRunParams, assump
   const organizationIds = new Set<string>();
   const seenUrls = new Set<string>();
 
-  const persistResource = async (candidate: HiringResourceCandidate): Promise<void> => {
+  const persistResource = async (rawCandidate: HiringResourceCandidate): Promise<void> => {
     try {
+      const candidate = enforceCountryFilter(rawCandidate, params.geography.countries);
       const normalizedUrl = normalizeUrl(candidate.url);
       seenUrls.add(normalizedUrl);
 
@@ -181,7 +217,7 @@ async function processRun(runId: string, params: HiringResourceRunParams, assump
         data: { confirmedCount, needsReviewCount, excludedCount, organizationCount: organizationIds.size },
       });
     } catch (error) {
-      errors.push(`[${candidate.name}] ${(error as Error).message}`);
+      errors.push(`[${rawCandidate.name}] ${(error as Error).message}`);
     }
   };
 
