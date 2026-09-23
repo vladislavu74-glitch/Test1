@@ -15,7 +15,6 @@ final class HiringResourcesViewModel: ObservableObject {
     // текст-подсказка), остальные списки (города/специализация/языки/
     // исключения) — через запятую без отдельного справочника.
     @Published var selectedCountries: [String] = []
-    @Published var newCountryText = ""
     @Published var citiesText = ""
     @Published var includeRemote = true
     @Published var specializationText = ""
@@ -76,14 +75,13 @@ final class HiringResourcesViewModel: ObservableObject {
             .filter { !$0.isEmpty }
     }
 
-    /// Добавляет страну из текстового поля (или пункта быстрого выбора) в
+    /// Добавляет страну, выбранную из выпадающего меню (`WorldCountries`), в
     /// список ограничения по географии — без дублей, без учёта регистра.
     func addCountry(_ raw: String) {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         guard !selectedCountries.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return }
         selectedCountries.append(name)
-        newCountryText = ""
     }
 
     func removeCountries(at offsets: IndexSet) {

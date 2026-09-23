@@ -2,21 +2,15 @@ import SwiftUI
 
 /// Параметры запуска поиска ресурсов найма (раздел 1 требования). Страны —
 /// явный список с добавлением/удалением (реальное ограничение поиска, не
-/// текст-подсказка для модели); остальные списки (города/специализация/
-/// языки/исключения) — через запятую. Незаданное поле backend трактует как
-/// "не ограничено" и явно фиксирует это как допущение в отчёте запуска.
+/// текст-подсказка для модели), выбираются выпадающим меню из глобального
+/// алфавитного справочника (`WorldCountries` — поиск источников не
+/// ограничен СНГ, в отличие от справочника вакансий в «Критериях»);
+/// остальные списки (города/специализация/языки/исключения) — через запятую.
+/// Незаданное поле backend трактует как "не ограничено" и явно фиксирует это
+/// как допущение в отчёте запуска.
 struct HiringResourceSearchParamsView: View {
     @ObservedObject var viewModel: HiringResourcesViewModel
     @Environment(\.dismiss) private var dismiss
-
-    // Небольшой набор стран для быстрого выбора одним тапом — поиск ресурсов
-    // найма не ограничен СНГ (в отличие от справочника вакансий в
-    // «Критериях»), поэтому это просто подсказка, а не единственный вариант:
-    // свою страну всегда можно ввести и добавить вручную ниже.
-    private let quickPickCountries = [
-        "Россия", "Казахстан", "Беларусь", "Узбекистан", "Киргизия",
-        "Германия", "Польша", "США", "Великобритания", "ОАЭ",
-    ]
 
     var body: some View {
         Form {
@@ -32,27 +26,16 @@ struct HiringResourceSearchParamsView: View {
                     .onDelete(perform: viewModel.removeCountries)
                 }
 
-                HStack {
-                    TextField("Добавить страну", text: $viewModel.newCountryText)
-                        .onSubmit { viewModel.addCountry(viewModel.newCountryText) }
-                    Button {
-                        viewModel.addCountry(viewModel.newCountryText)
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                    }
-                    .disabled(viewModel.newCountryText.trimmingCharacters(in: .whitespaces).isEmpty)
+                let remainingCountries = WorldCountries.all.filter { country in
+                    !viewModel.selectedCountries.contains { $0.caseInsensitiveCompare(country) == .orderedSame }
                 }
-
-                let remainingQuickPicks = quickPickCountries.filter { pick in
-                    !viewModel.selectedCountries.contains { $0.caseInsensitiveCompare(pick) == .orderedSame }
-                }
-                if !remainingQuickPicks.isEmpty {
+                if !remainingCountries.isEmpty {
                     Menu {
-                        ForEach(remainingQuickPicks, id: \.self) { country in
+                        ForEach(remainingCountries, id: \.self) { country in
                             Button(country) { viewModel.addCountry(country) }
                         }
                     } label: {
-                        Label("Быстрый выбор", systemImage: "chevron.down.circle")
+                        Label("Добавить страну", systemImage: "globe")
                     }
                 }
 
