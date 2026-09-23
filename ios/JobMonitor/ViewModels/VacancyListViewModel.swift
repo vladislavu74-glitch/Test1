@@ -77,11 +77,26 @@ final class VacancyListViewModel: ObservableObject {
         }
     }
 
+    /// Запускает скан и опрашивает его статус до завершения — сам скан идёт
+    /// последовательно по каждой должности × каждому источнику и может
+    /// занять несколько минут, поэтому backend отвечает сразу (см.
+    /// APIClient.startScan) и результат нужно дожидаться отдельно, а не
+    /// одним HTTP-ответом.
     func runScanNow() async {
         isScanning = true
         errorMessage = nil
         do {
-            _ = try await client.runScan()
+            let runId = try await client.startScan()
+            while true {
+                let run = try await client.fetchScanRun(id: runId)
+                if !run.isRunning {
+                    if let error = run.error, !error.isEmpty {
+                        errorMessage = error
+                    }
+                    break
+                }
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+            }
             await load()
         } catch {
             errorMessage = error.localizedDescription

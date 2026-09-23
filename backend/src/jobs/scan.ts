@@ -20,8 +20,31 @@ export interface ScanResult {
 // не сканируются (можно будет открыть их вручную по ссылке из карточки).
 const SCANNABLE_CATEGORIES = ['direct_employer', 'job_board', 'community', 'social', 'telegram'];
 
+// Запускает скан в фоне и сразу возвращает id записи — сам скан обходит
+// каждое название должности × каждый источник ПОСЛЕДОВАТЕЛЬНО (см. ниже),
+// и при нескольких источниках с недоступным/медленным сайтом суммарное
+// время легко переваливает за минуту, а то и несколько — синхронный ответ
+// на HTTP-запрос от приложения в этом случае упирался бы в таймаут клиента.
+// Тот же паттерн "создать запись, вернуть id, работать в фоне", что и у
+// поиска ресурсов найма (см. discoverHiringResources.ts) — приложение
+// опрашивает GET /api/scan/runs/:id, пока finishedAt не появится.
+export async function startScan(trigger: ScanTrigger): Promise<{ scanRunId: string }> {
+  const scanRun = await prisma.scanRun.create({ data: { trigger } });
+  processScan(scanRun.id, trigger).catch((error) => {
+    console.error('Scan failed:', error);
+  });
+  return { scanRunId: scanRun.id };
+}
+
+// Синхронная обёртка — ждёт полного завершения скана. Используется
+// планировщиком (cron, где нет HTTP-клиента, которому можно было бы
+// ответить сразу и не нужно ждать) и тестами.
 export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
   const scanRun = await prisma.scanRun.create({ data: { trigger } });
+  return processScan(scanRun.id, trigger);
+}
+
+async function processScan(scanRunId: string, trigger: ScanTrigger): Promise<ScanResult> {
   const errors: string[] = [];
 
   try {
@@ -72,7 +95,7 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
     }
 
     await prisma.scanRun.update({
-      where: { id: scanRun.id },
+      where: { id: scanRunId },
       data: {
         finishedAt: new Date(),
         newVacancies: newlyInsertedVacancyIds.length,
@@ -82,14 +105,14 @@ export async function runScan(trigger: ScanTrigger): Promise<ScanResult> {
     });
 
     return {
-      scanRunId: scanRun.id,
+      scanRunId,
       newVacancyCount: newlyInsertedVacancyIds.length,
       emailSent,
       errors,
     };
   } catch (error) {
     await prisma.scanRun.update({
-      where: { id: scanRun.id },
+      where: { id: scanRunId },
       data: { finishedAt: new Date(), error: (error as Error).message },
     });
     throw error;

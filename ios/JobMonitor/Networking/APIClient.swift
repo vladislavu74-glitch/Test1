@@ -188,8 +188,20 @@ final class APIClient {
 
     // MARK: - Scan
 
-    func runScan() async throws -> ScanResult {
-        try await post("/api/scan/run", body: EmptyBody())
+    // Скан идёт последовательно по каждому названию должности × каждому
+    // источнику и может занять несколько минут (особенно если часть
+    // источников недоступна) — backend отвечает сразу id запуска (202),
+    // не дожидаясь завершения, чтобы не упереться в таймаут клиента.
+    // Приложение опрашивает fetchScanRun(id:), как и для поиска источников.
+    struct ScanStarted: Decodable { let scanRunId: String }
+
+    func startScan() async throws -> String {
+        let started: ScanStarted = try await post("/api/scan/run", body: EmptyBody())
+        return started.scanRunId
+    }
+
+    func fetchScanRun(id: String) async throws -> ScanRun {
+        try await get("/api/scan/runs/\(id)")
     }
 
     func fetchLastScan() async throws -> ScanRun? {

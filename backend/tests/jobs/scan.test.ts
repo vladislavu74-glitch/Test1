@@ -9,7 +9,7 @@ process.env.RESEND_API_KEY = 'test-resend-key';
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { runScan } from '../../src/jobs/scan';
+import { runScan, startScan } from '../../src/jobs/scan';
 import { prisma } from '../../src/db/client';
 import { genericSiteConnector } from '../../src/connectors/genericSite';
 import type { RawVacancy } from '../../src/connectors/types';
@@ -209,5 +209,34 @@ describe('runScan', () => {
     expect(result.errors).toHaveLength(2);
     const scanRun = await prisma.scanRun.findUniqueOrThrow({ where: { id: result.scanRunId } });
     expect(scanRun.error).toBe('[Fake Resource] Сайт example.com недоступен (×2)');
+  });
+});
+
+describe('startScan', () => {
+  it('returns immediately with a run id while the scan keeps going in the background', async () => {
+    let resolveSearch: (v: RawVacancy[]) => void = () => {};
+    const searchStarted = new Promise<void>((resolve) => {
+      searchSpy.mockImplementation(() => {
+        resolve();
+        return new Promise<RawVacancy[]>((res) => { resolveSearch = res; });
+      });
+    });
+
+    const { scanRunId } = await startScan('manual');
+    await searchStarted;
+
+    const midRun = await prisma.scanRun.findUniqueOrThrow({ where: { id: scanRunId } });
+    expect(midRun.finishedAt).toBeNull();
+
+    resolveSearch([]);
+    for (let i = 0; i < 40; i++) {
+      const run = await prisma.scanRun.findUniqueOrThrow({ where: { id: scanRunId } });
+      if (run.finishedAt) {
+        expect(run.newVacancies).toBe(0);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error('Scan did not finish in time');
   });
 });

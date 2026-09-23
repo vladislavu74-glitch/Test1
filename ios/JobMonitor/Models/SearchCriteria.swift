@@ -13,11 +13,6 @@ struct ScanRun: Codable, Equatable {
     let newVacancies: Int
     let emailSent: Bool
     let error: String?
-}
 
-struct ScanResult: Codable, Equatable {
-    let scanRunId: String
-    let newVacancyCount: Int
-    let emailSent: Bool
-    let errors: [String]
+    var isRunning: Bool { finishedAt == nil }
 }

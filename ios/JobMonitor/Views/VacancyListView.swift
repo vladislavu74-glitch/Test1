@@ -47,12 +47,23 @@ struct VacancyListView: View {
                     Button("Отмена", role: .cancel) {}
                 }
                 .safeAreaInset(edge: .top) {
-                    Picker("Фильтр", selection: $viewModel.filter) {
-                        ForEach(VacancyFilter.allCases) { filter in
-                            Text(filter.title).tag(filter)
+                    VStack(spacing: 8) {
+                        Picker("Фильтр", selection: $viewModel.filter) {
+                            ForEach(VacancyFilter.allCases) { filter in
+                                Text(filter.title).tag(filter)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        if viewModel.isScanning && !viewModel.vacancies.isEmpty {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("Идёт поиск вакансий — список обновится по завершении…")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
                     .padding(.horizontal)
                     .padding(.top, 4)
                     .background(.bar)
@@ -88,6 +99,17 @@ struct VacancyListView: View {
             )
         } else if viewModel.isLoading && viewModel.vacancies.isEmpty {
             ProgressView()
+        } else if viewModel.isScanning && viewModel.vacancies.isEmpty {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Идёт поиск вакансий…")
+                    .font(.subheadline)
+                Text("Может занять несколько минут — обходим все источники по очереди.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 32)
         } else if viewModel.vacancies.isEmpty {
             EmptyStateView(
                 systemImage: "tray",
