@@ -10,7 +10,7 @@ struct Vacancy: Identifiable, Codable, Equatable {
     let publishedAt: Date
     let sourceName: String
     let hidden: Bool
-    let isNew: Bool
+    var isNew: Bool
 }
 
 struct VacancySummary: Codable, Equatable {

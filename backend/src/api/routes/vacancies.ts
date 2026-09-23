@@ -64,25 +64,20 @@ vacanciesRouter.get('/summary', async (_req, res) => {
   res.json({ newCount });
 });
 
-// Вызывается приложением после показа списка активных вакансий — снимает
-// значок "Новое" с уже показанных записей. Скрытые вакансии не трогаем,
-// чтобы при повторном показе они не потеряли статус "новых".
-vacanciesRouter.post('/mark-all-seen', async (_req, res) => {
-  const unseen = await prisma.vacancy.findMany({
-    where: { OR: [{ state: null }, { state: { hidden: false, seen: false } }] },
-    select: { id: true },
+// Вызывается приложением, когда пользователь открывает конкретную вакансию
+// (тап по названию/кнопке "Посмотреть вакансию") — снимает значок "Новое"
+// именно с неё, а не со всего показанного списка.
+vacanciesRouter.post('/:id/seen', async (req, res) => {
+  const vacancy = await prisma.vacancy.findUnique({ where: { id: req.params.id } });
+  if (!vacancy) {
+    res.status(404).json({ error: 'Vacancy not found' });
+    return;
+  }
+  await prisma.vacancyState.upsert({
+    where: { vacancyId: vacancy.id },
+    update: { seen: true },
+    create: { vacancyId: vacancy.id, seen: true },
   });
-
-  await prisma.$transaction(
-    unseen.map((v) =>
-      prisma.vacancyState.upsert({
-        where: { vacancyId: v.id },
-        update: { seen: true },
-        create: { vacancyId: v.id, seen: true },
-      }),
-    ),
-  );
-
   res.status(204).end();
 });
 

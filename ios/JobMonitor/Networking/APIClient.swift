@@ -82,8 +82,10 @@ final class APIClient {
         try await get("/api/vacancies/summary")
     }
 
-    func markAllVacanciesSeen() async throws {
-        try await post("/api/vacancies/mark-all-seen", body: EmptyBody())
+    /// Вызывается при открытии конкретной вакансии — снимает "Новое" именно
+    /// с неё, а не со всего показанного списка.
+    func markVacancySeen(id: String) async throws {
+        try await post("/api/vacancies/\(id)/seen", body: EmptyBody())
     }
 
     func clearAllVacancies() async throws {

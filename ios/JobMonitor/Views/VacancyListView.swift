@@ -100,6 +100,7 @@ struct VacancyListView: View {
                     if let url = URL(string: vacancy.url) {
                         selectedURL = url
                     }
+                    Task { await viewModel.markSeen(vacancy) }
                 }
                 .swipeActions(edge: .trailing) {
                     if vacancy.hidden {

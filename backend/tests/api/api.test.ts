@@ -146,7 +146,7 @@ describe('vacancies', () => {
     expect(activeAfterUnhide.body).toHaveLength(2);
   });
 
-  it('flags unseen vacancies as new, exposes a count, and mark-all-seen clears it', async () => {
+  it('flags unseen vacancies as new, exposes a count, and marking one seen only clears that one', async () => {
     const source = await prisma.source.create({
       data: { key: 'hh_ru', name: 'hh.ru', kind: 'api', config: '{}' },
     });
@@ -160,20 +160,35 @@ describe('vacancies', () => {
         state: { create: { hidden: false } },
       },
     });
+    const otherVacancy = await prisma.vacancy.create({
+      data: {
+        sourceId: source.id,
+        externalId: 'v2',
+        title: 'Android Developer',
+        url: 'https://example.com/v2',
+        publishedAt: new Date('2024-01-02'),
+        state: { create: { hidden: false } },
+      },
+    });
 
     const list = await request(app).get('/api/vacancies?filter=active').set(authHeader).expect(200);
     expect(list.body[0].isNew).toBe(true);
 
     const summary = await request(app).get('/api/vacancies/summary').set(authHeader).expect(200);
-    expect(summary.body.newCount).toBe(1);
+    expect(summary.body.newCount).toBe(2);
 
-    await request(app).post('/api/vacancies/mark-all-seen').set(authHeader).expect(204);
+    await request(app).post(`/api/vacancies/${vacancy.id}/seen`).set(authHeader).expect(204);
 
     const summaryAfter = await request(app).get('/api/vacancies/summary').set(authHeader).expect(200);
-    expect(summaryAfter.body.newCount).toBe(0);
+    expect(summaryAfter.body.newCount).toBe(1);
 
     const listAfter = await request(app).get('/api/vacancies?filter=active').set(authHeader).expect(200);
     expect(listAfter.body.find((v: { id: string }) => v.id === vacancy.id).isNew).toBe(false);
+    expect(listAfter.body.find((v: { id: string }) => v.id === otherVacancy.id).isNew).toBe(true);
+  });
+
+  it('returns 404 when marking an unknown vacancy as seen', async () => {
+    await request(app).post('/api/vacancies/does-not-exist/seen').set(authHeader).expect(404);
   });
 
   it('puts unseen ("new") vacancies above already-seen ones regardless of publish date', async () => {
