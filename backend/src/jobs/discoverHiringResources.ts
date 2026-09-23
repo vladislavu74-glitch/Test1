@@ -9,14 +9,17 @@
 //
 // Работает асинхронно: startHiringResourceDiscovery сразу создаёт запись
 // запуска и возвращает её id, а сам поиск продолжается в фоне — иначе
-// HTTP-запрос от приложения висел бы без ответа несколько минут. Приложение
-// опрашивает GET /runs/:id (поле status + queriesUsed) для статус-бара.
+// HTTP-запрос от приложения висел бы без ответа несколько минут. Каждый
+// найденный ресурс сохраняется в БД СРАЗУ (см. onResource ниже), а не одним
+// пакетом в конце — это даёт промежуточные результаты и точку для остановки
+// (requestStop) между находками, а не только по решению самой модели.
 import { prisma } from '../db/client';
 import { searchHiringResources } from '../discovery/hiringResourceAgent';
 import { normalizeUrl, resolveOrganizationId } from '../discovery/dedupe';
 import { scoreResource } from '../discovery/scoring';
 import {
   DEFAULT_RECENCY_DAYS,
+  type HiringResourceCandidate,
   type HiringResourceRunParams,
 } from '../discovery/hiringResourceTypes';
 
@@ -100,79 +103,95 @@ export async function startHiringResourceDiscovery(
   return { runId: run.id };
 }
 
+// Помечает запуск как "нужно остановиться" — агент проверяет этот флаг
+// сразу после каждого найденного ресурса (см. searchHiringResources) и
+// завершает работу с уже найденным, не дожидаясь решения модели.
+export async function requestStopHiringResourceDiscovery(runId: string): Promise<boolean> {
+  const run = await prisma.hiringResourceRun.findUnique({ where: { id: runId } });
+  if (!run || run.status !== 'running') return false;
+  await prisma.hiringResourceRun.update({ where: { id: runId }, data: { stopRequested: true } });
+  return true;
+}
+
 async function processRun(runId: string, params: HiringResourceRunParams, assumptions: string[]): Promise<void> {
   const errors: string[] = [];
+  let confirmedCount = 0;
+  let needsReviewCount = 0;
+  let excludedCount = 0;
+  const organizationIds = new Set<string>();
+  const seenUrls = new Set<string>();
+
+  const persistResource = async (candidate: HiringResourceCandidate): Promise<void> => {
+    try {
+      const normalizedUrl = normalizeUrl(candidate.url);
+      seenUrls.add(normalizedUrl);
+
+      const organizationId = await resolveOrganizationId(candidate.organizationName);
+      if (organizationId) organizationIds.add(organizationId);
+
+      const score = scoreResource(candidate, params);
+      const now = new Date();
+
+      const shared = {
+        name: candidate.name,
+        category: candidate.category,
+        roles: JSON.stringify(candidate.roles ?? []),
+        organizationId,
+        hiringGeography: candidate.hiringGeography,
+        agencyLocation: candidate.agencyLocation,
+        specialization: candidate.specialization,
+        evidenceSummary: candidate.evidenceSummary,
+        evidenceUrl: candidate.evidenceUrl,
+        lastRelevantDate: candidate.lastRelevantDate ? new Date(candidate.lastRelevantDate) : null,
+        contactMethod: candidate.contactMethod,
+        publicContact: candidate.publicContact,
+        status: candidate.status,
+        exclusionReason: candidate.exclusionReason,
+        relatedResources: JSON.stringify(candidate.relatedResources ?? []),
+        uncertainties: candidate.uncertainties,
+        score: score.total,
+        scoreGeoSpec: score.geoSpec,
+        scoreEvidence: score.evidence,
+        scoreRecency: score.recency,
+        scoreContact: score.contact,
+        checkedAt: now,
+        lastSeenAt: now,
+        isStale: false,
+        runId,
+      };
+
+      // Повторно найденный тот же ресурс (по нормализованному URL) —
+      // обновляем запись вместо создания дубля (раздел 8). "Новое" — только
+      // для реально новых записей; у повторно найденных isNew не трогаем.
+      await prisma.hiringResource.upsert({
+        where: { url: normalizedUrl },
+        create: { ...shared, url: normalizedUrl, isNew: true },
+        update: shared,
+      });
+
+      if (candidate.status === 'confirmed') confirmedCount += 1;
+      else if (candidate.status === 'needs_review') needsReviewCount += 1;
+      else excludedCount += 1;
+
+      // Отчёт о прогрессе сразу после каждого сохранённого ресурса — вместе
+      // с queriesUsed это то, что опрашивает приложение для промежуточных
+      // результатов и статус-бара.
+      await prisma.hiringResourceRun.update({
+        where: { id: runId },
+        data: { confirmedCount, needsReviewCount, excludedCount, organizationCount: organizationIds.size },
+      });
+    } catch (error) {
+      errors.push(`[${candidate.name}] ${(error as Error).message}`);
+    }
+  };
+
+  const checkShouldStop = async (): Promise<boolean> => {
+    const run = await prisma.hiringResourceRun.findUnique({ where: { id: runId }, select: { stopRequested: true } });
+    return run?.stopRequested ?? false;
+  };
 
   try {
-    const searchResult = await searchHiringResources(params, assumptions, async (queriesUsed) => {
-      await prisma.hiringResourceRun.update({ where: { id: runId }, data: { queriesUsed } }).catch(() => {
-        // Промежуточное обновление прогресса не критично — если БД временно
-        // недоступна, не прерываем сам поиск из-за этого.
-      });
-    });
-
-    let confirmedCount = 0;
-    let needsReviewCount = 0;
-    let excludedCount = 0;
-    const organizationIds = new Set<string>();
-    const seenUrls = new Set<string>();
-
-    for (const candidate of searchResult.resources) {
-      try {
-        const normalizedUrl = normalizeUrl(candidate.url);
-        seenUrls.add(normalizedUrl);
-
-        const organizationId = await resolveOrganizationId(candidate.organizationName);
-        if (organizationId) organizationIds.add(organizationId);
-
-        const score = scoreResource(candidate, params);
-        const now = new Date();
-
-        const shared = {
-          name: candidate.name,
-          category: candidate.category,
-          roles: JSON.stringify(candidate.roles ?? []),
-          organizationId,
-          hiringGeography: candidate.hiringGeography,
-          agencyLocation: candidate.agencyLocation,
-          specialization: candidate.specialization,
-          evidenceSummary: candidate.evidenceSummary,
-          evidenceUrl: candidate.evidenceUrl,
-          lastRelevantDate: candidate.lastRelevantDate ? new Date(candidate.lastRelevantDate) : null,
-          contactMethod: candidate.contactMethod,
-          publicContact: candidate.publicContact,
-          status: candidate.status,
-          exclusionReason: candidate.exclusionReason,
-          relatedResources: JSON.stringify(candidate.relatedResources ?? []),
-          uncertainties: candidate.uncertainties,
-          score: score.total,
-          scoreGeoSpec: score.geoSpec,
-          scoreEvidence: score.evidence,
-          scoreRecency: score.recency,
-          scoreContact: score.contact,
-          checkedAt: now,
-          lastSeenAt: now,
-          isStale: false,
-          runId,
-        };
-
-        // Повторно найденный тот же ресурс (по нормализованному URL) —
-        // обновляем запись вместо создания дубля (раздел 8). "Новое" —
-        // только для реально новых записей; у повторно найденных isNew не
-        // трогаем, пока пользователь не отметит их просмотренными.
-        await prisma.hiringResource.upsert({
-          where: { url: normalizedUrl },
-          create: { ...shared, url: normalizedUrl, isNew: true },
-          update: shared,
-        });
-
-        if (candidate.status === 'confirmed') confirmedCount += 1;
-        else if (candidate.status === 'needs_review') needsReviewCount += 1;
-        else excludedCount += 1;
-      } catch (error) {
-        errors.push(`[${candidate.name}] ${(error as Error).message}`);
-      }
-    }
+    const outcome = await searchHiringResources(params, assumptions, persistResource, checkShouldStop);
 
     // Пометить "неактуальными" ранее найденные ресурсы из категорий этого
     // запуска, которые не подтвердились повторно — "перестали откликаться
@@ -190,14 +209,14 @@ async function processRun(runId: string, params: HiringResourceRunParams, assump
     await prisma.hiringResourceRun.update({
       where: { id: runId },
       data: {
-        status: 'done',
+        status: outcome.stoppedByUser ? 'stopped' : 'done',
         finishedAt: new Date(),
         confirmedCount,
         needsReviewCount,
         excludedCount,
         organizationCount: organizationIds.size,
-        limitations: JSON.stringify(searchResult.limitations),
-        queriesUsed: searchResult.queriesUsed,
+        limitations: JSON.stringify(outcome.limitations),
+        queriesUsed: outcome.queriesUsed,
         error: errors.length ? errors.join('\n') : undefined,
       },
     });

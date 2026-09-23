@@ -56,10 +56,16 @@ export interface HiringResourceCandidate {
   uncertainties: string | null;
 }
 
-export interface HiringResourceSearchResult {
-  resources: HiringResourceCandidate[];
+// Итог поиска — сами ресурсы больше не собираются в массив и не возвращаются
+// одним пакетом: каждый передаётся вызывающему коду сразу через колбэк
+// onResource (см. searchHiringResources), как только модель его находит, —
+// это и даёт промежуточные результаты и возможность остановить поиск между
+// находками, а не только после того, как модель решит закончить сама.
+export interface HiringResourceSearchOutcome {
   queriesUsed: number;
+  foundCount: number;
   limitations: string[]; // категории/условия, которые не удалось покрыть
+  stoppedByUser: boolean; // остановлено пользователем, а не естественным завершением
   rawText?: string;
 }
 

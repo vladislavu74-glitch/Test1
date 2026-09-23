@@ -256,9 +256,14 @@ model HiringResourceRun {
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
   trigger    String // всегда "manual" — обновление источников запускается только кнопкой в приложении, без крона
-  // "running" | "done" | "error" — приложение опрашивает это поле, чтобы
-  // показать статус-бар во время долгого поиска.
+  // "running" | "done" | "stopped" | "error" — приложение опрашивает это
+  // поле, чтобы показать статус-бар во время долгого поиска. "stopped" —
+  // пользователь нажал "Остановить", в отличие от "error" это не сбой.
   status     String    @default("running")
+  // Пользователь запросил остановку (POST /runs/:id/stop) — агент проверяет
+  // этот флаг между шагами поиска и завершает работу с уже найденным вместо
+  // ожидания собственного решения модели закончить.
+  stopRequested Boolean @default(false)
 
   // Входные параметры запуска, включая явные допущения по незаданным
   // полям — см. HiringResourceRunParams в src/discovery/types.ts.

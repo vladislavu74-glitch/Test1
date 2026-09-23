@@ -27,6 +27,9 @@ final class HiringResourcesViewModel: ObservableObject {
 
     // Статус текущего/последнего запуска — управляет статус-баром.
     @Published var currentRun: HiringResourceRun?
+    // Локальный флаг для мгновенной обратной связи по нажатию "Остановить" —
+    // сам run.stopRequested подтянется опросом через пару секунд.
+    @Published var stopRequestSent = false
 
     private let client: APIClient
     private var pollTask: Task<Void, Never>?
@@ -79,6 +82,7 @@ final class HiringResourcesViewModel: ObservableObject {
         )
 
         errorMessage = nil
+        stopRequestSent = false
         pollTask?.cancel()
         pollTask = Task {
             do {
@@ -90,23 +94,40 @@ final class HiringResourcesViewModel: ObservableObject {
         }
     }
 
+    /// Просит агента остановиться — уже найденные ресурсы остаются, но
+    /// поиск новых прекращается после текущей находки (см. backend README).
+    func stopDiscovery() {
+        guard let runId = currentRun?.id else { return }
+        stopRequestSent = true
+        Task {
+            do {
+                try await client.stopHiringResourceDiscovery(id: runId)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     /// Опрашивает статус запуска каждые пару секунд, пока он не завершится —
     /// backend работает асинхронно и может искать несколько минут, поэтому
-    /// единственный HTTP-ответ для статус-бара не подходит.
+    /// единственный HTTP-ответ для статус-бара не подходит. Список ресурсов
+    /// обновляется на каждом тике — это и есть промежуточные результаты:
+    /// каждый найденный ресурс сохраняется backend'ом сразу, а не одним
+    /// пакетом в конце (см. hiringResourceAgent.ts).
     private func pollRun(id: String) async {
         while !Task.isCancelled {
             do {
                 let run = try await client.fetchHiringResourceRun(id: id)
                 currentRun = run
+                await load()
                 if !run.isRunning {
-                    await load()
                     return
                 }
             } catch {
                 errorMessage = error.localizedDescription
                 return
             }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
         }
     }
 
@@ -122,6 +143,9 @@ final class HiringResourcesViewModel: ObservableObject {
 
     var statusBarText: String? {
         guard let run = currentRun, run.isRunning else { return nil }
-        return "Идёт поиск ресурсов… выполнено запросов: \(run.queriesUsed)"
+        if stopRequestSent || run.stopRequested {
+            return "Останавливаем… найдено ресурсов: \(run.confirmedCount + run.needsReviewCount + run.excludedCount)"
+        }
+        return "Идёт поиск ресурсов… выполнено запросов: \(run.queriesUsed), найдено: \(run.confirmedCount + run.needsReviewCount + run.excludedCount)"
     }
 }

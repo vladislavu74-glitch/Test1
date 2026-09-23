@@ -184,6 +184,12 @@ final class APIClient {
         try await get("/api/hiring-resources/runs/list")
     }
 
+    /// Просит агента остановиться после текущего найденного ресурса — не
+    /// обрывает мгновенно, но уже найденное остаётся сохранённым.
+    func stopHiringResourceDiscovery(id: String) async throws {
+        try await post("/api/hiring-resources/runs/\(id)/stop", body: EmptyBody())
+    }
+
     // MARK: - Job titles
 
     func fetchJobTitles() async throws -> [JobTitle] {

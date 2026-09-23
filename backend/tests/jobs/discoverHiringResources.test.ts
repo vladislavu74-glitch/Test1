@@ -5,7 +5,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '../../src/db/client';
-import type { HiringResourceSearchResult } from '../../src/discovery/hiringResourceTypes';
+import type { HiringResourceCandidate, HiringResourceSearchOutcome } from '../../src/discovery/hiringResourceTypes';
 
 jest.mock('../../src/discovery/hiringResourceAgent', () => ({
   searchHiringResources: jest.fn(),
@@ -13,10 +13,13 @@ jest.mock('../../src/discovery/hiringResourceAgent', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { searchHiringResources } = jest.requireMock('../../src/discovery/hiringResourceAgent') as {
-  searchHiringResources: jest.Mock<Promise<HiringResourceSearchResult>, unknown[]>;
+  searchHiringResources: jest.Mock<
+    Promise<HiringResourceSearchOutcome>,
+    [unknown, unknown, (r: HiringResourceCandidate) => Promise<void>, () => Promise<boolean>]
+  >;
 };
 
-import { startHiringResourceDiscovery } from '../../src/jobs/discoverHiringResources';
+import { startHiringResourceDiscovery, requestStopHiringResourceDiscovery } from '../../src/jobs/discoverHiringResources';
 
 const backendRoot = path.resolve(__dirname, '../..');
 const testDbPath = path.join(backendRoot, 'test-discover-hiring-resources.sqlite');
@@ -46,29 +49,34 @@ async function waitForRunDone(runId: string): Promise<void> {
   throw new Error('Run did not finish in time');
 }
 
+function agency(name: string, url: string): HiringResourceCandidate {
+  return {
+    name, url, category: 'recruiting_agency', roles: ['sources_for_clients'],
+    organizationName: null, hiringGeography: 'Москва', agencyLocation: null, specialization: null,
+    evidenceSummary: 'Подбор персонала для клиентов', evidenceUrl: `${url}uslugi`,
+    lastRelevantDate: null, contactMethod: 'Форма заявки', publicContact: null, status: 'confirmed',
+    exclusionReason: null, relatedResources: [], uncertainties: null,
+  };
+}
+
+// Имитирует реальный агент: сообщает каждый ресурс через onResource по
+// очереди, проверяя shouldStop() между ними — так же, как это делает
+// searchHiringResources в src/discovery/hiringResourceAgent.ts.
+function mockAgentReporting(resources: HiringResourceCandidate[], limitations: string[] = []) {
+  searchHiringResources.mockImplementationOnce(async (_params, _assumptions, onResource, shouldStop) => {
+    for (const resource of resources) {
+      await onResource(resource);
+      if (await shouldStop()) {
+        return { queriesUsed: resources.length, foundCount: resources.length, limitations: [], stoppedByUser: true };
+      }
+    }
+    return { queriesUsed: resources.length, foundCount: resources.length, limitations, stoppedByUser: false };
+  });
+}
+
 describe('startHiringResourceDiscovery', () => {
   it('marks a resource missing from a rerun in the same category as stale, and reconfirms the other', async () => {
-    // Первый запуск находит два ресурса.
-    searchHiringResources.mockResolvedValueOnce({
-      resources: [
-        {
-          name: 'Agency A', url: 'https://agency-a.example/', category: 'recruiting_agency', roles: ['sources_for_clients'],
-          organizationName: null, hiringGeography: 'Москва', agencyLocation: null, specialization: null,
-          evidenceSummary: 'Подбор персонала для клиентов', evidenceUrl: 'https://agency-a.example/uslugi',
-          lastRelevantDate: null, contactMethod: 'Форма заявки', publicContact: null, status: 'confirmed',
-          exclusionReason: null, relatedResources: [], uncertainties: null,
-        },
-        {
-          name: 'Agency B', url: 'https://agency-b.example/', category: 'recruiting_agency', roles: ['sources_for_clients'],
-          organizationName: null, hiringGeography: 'Москва', agencyLocation: null, specialization: null,
-          evidenceSummary: 'Подбор персонала для клиентов', evidenceUrl: 'https://agency-b.example/uslugi',
-          lastRelevantDate: null, contactMethod: 'Форма заявки', publicContact: null, status: 'confirmed',
-          exclusionReason: null, relatedResources: [], uncertainties: null,
-        },
-      ],
-      queriesUsed: 3,
-      limitations: [],
-    });
+    mockAgentReporting([agency('Agency A', 'https://agency-a.example/'), agency('Agency B', 'https://agency-b.example/')]);
 
     const first = await startHiringResourceDiscovery({ categories: ['recruiting_agency'] });
     await waitForRunDone(first.runId);
@@ -79,19 +87,7 @@ describe('startHiringResourceDiscovery', () => {
     expect(agencyB?.isStale).toBe(false);
 
     // Второй запуск (та же категория) находит только A — B "перестал откликаться".
-    searchHiringResources.mockResolvedValueOnce({
-      resources: [
-        {
-          name: 'Agency A', url: 'https://agency-a.example/', category: 'recruiting_agency', roles: ['sources_for_clients'],
-          organizationName: null, hiringGeography: 'Москва', agencyLocation: null, specialization: null,
-          evidenceSummary: 'Подбор персонала для клиентов', evidenceUrl: 'https://agency-a.example/uslugi',
-          lastRelevantDate: null, contactMethod: 'Форма заявки', publicContact: null, status: 'confirmed',
-          exclusionReason: null, relatedResources: [], uncertainties: null,
-        },
-      ],
-      queriesUsed: 2,
-      limitations: [],
-    });
+    mockAgentReporting([agency('Agency A', 'https://agency-a.example/')]);
 
     const second = await startHiringResourceDiscovery({ categories: ['recruiting_agency'] });
     await waitForRunDone(second.runId);
@@ -113,7 +109,7 @@ describe('startHiringResourceDiscovery', () => {
       },
     });
 
-    searchHiringResources.mockResolvedValueOnce({ resources: [], queriesUsed: 1, limitations: [] });
+    mockAgentReporting([]);
 
     const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'] });
     await waitForRunDone(run.runId);
@@ -131,12 +127,67 @@ describe('startHiringResourceDiscovery', () => {
       },
     });
 
-    searchHiringResources.mockResolvedValueOnce({ resources: [], queriesUsed: 1, limitations: [] });
+    mockAgentReporting([]);
 
     const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'] });
     await waitForRunDone(run.runId);
 
     const untouched = await prisma.hiringResource.findUnique({ where: { url: 'https://t.me/some_channel' } });
     expect(untouched?.isStale).toBe(false);
+  });
+
+  it('persists each resource as soon as it is reported, before the run finishes', async () => {
+    let resolveSecond: () => void = () => {};
+    const secondReported = new Promise<void>((resolve) => { resolveSecond = resolve; });
+
+    searchHiringResources.mockImplementationOnce(async (_params, _assumptions, onResource) => {
+      await onResource(agency('Agency A', 'https://agency-a.example/'));
+      // В этот момент первый ресурс уже должен быть виден в БД, хотя сам
+      // "поиск" ещё не завершён — это и есть промежуточный результат.
+      const midRun = await prisma.hiringResource.findUnique({ where: { url: 'https://agency-a.example/' } });
+      expect(midRun).not.toBeNull();
+      resolveSecond();
+      await onResource(agency('Agency B', 'https://agency-b.example/'));
+      return { queriesUsed: 2, foundCount: 2, limitations: [], stoppedByUser: false };
+    });
+
+    const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'] });
+    await secondReported;
+    await waitForRunDone(run.runId);
+  });
+
+  it('stops after the current resource once a stop is requested, keeping what was already found', async () => {
+    let requestedStop = false;
+
+    searchHiringResources.mockImplementationOnce(async (_params, _assumptions, onResource, shouldStop) => {
+      await onResource(agency('Agency A', 'https://agency-a.example/'));
+      requestedStop = await requestStopHiringResourceDiscovery((await prisma.hiringResourceRun.findFirstOrThrow()).id);
+      if (await shouldStop()) {
+        return { queriesUsed: 1, foundCount: 1, limitations: [], stoppedByUser: true };
+      }
+      await onResource(agency('Agency B', 'https://agency-b.example/'));
+      return { queriesUsed: 2, foundCount: 2, limitations: [], stoppedByUser: false };
+    });
+
+    const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'] });
+    await waitForRunDone(run.runId);
+
+    expect(requestedStop).toBe(true);
+    const finished = await prisma.hiringResourceRun.findUniqueOrThrow({ where: { id: run.runId } });
+    expect(finished.status).toBe('stopped');
+
+    const agencyA = await prisma.hiringResource.findUnique({ where: { url: 'https://agency-a.example/' } });
+    const agencyB = await prisma.hiringResource.findUnique({ where: { url: 'https://agency-b.example/' } });
+    expect(agencyA).not.toBeNull();
+    expect(agencyB).toBeNull();
+  });
+
+  it('rejects a stop request for a run that is not running', async () => {
+    mockAgentReporting([]);
+    const run = await startHiringResourceDiscovery({ categories: ['recruiting_agency'] });
+    await waitForRunDone(run.runId);
+
+    const stopped = await requestStopHiringResourceDiscovery(run.runId);
+    expect(stopped).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../db/client';
-import { startHiringResourceDiscovery } from '../../jobs/discoverHiringResources';
+import { startHiringResourceDiscovery, requestStopHiringResourceDiscovery } from '../../jobs/discoverHiringResources';
 import type { HiringResourceRunParams } from '../../discovery/hiringResourceTypes';
 
 export const hiringResourcesRouter = Router();
@@ -55,6 +55,18 @@ hiringResourcesRouter.post('/discover', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
+});
+
+// Просит агента остановиться после текущего/следующего найденного ресурса —
+// не обрывает запрос мгновенно (он всё ещё может дописывать один ресурс),
+// но не даёт продолжать искать дальше. Уже найденное остаётся в БД.
+hiringResourcesRouter.post('/runs/:id/stop', async (req, res) => {
+  const stopped = await requestStopHiringResourceDiscovery(req.params.id);
+  if (!stopped) {
+    res.status(409).json({ error: 'Run is not currently running' });
+    return;
+  }
+  res.status(204).end();
 });
 
 // Для бейджа/счётчика в приложении — сколько подтверждённых или требующих

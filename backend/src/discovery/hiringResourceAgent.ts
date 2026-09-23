@@ -3,6 +3,14 @@
 // Claude со встроенными server-side инструментами web_search (найти кандидатов)
 // и web_fetch (открыть и правда прочитать саму страницу, а не только сниппет
 // поисковой выдачи — раздел 3 требует именно это перед подтверждением ресурса).
+//
+// report_resource — клиентский инструмент, а не server-side: каждый его вызов
+// приостанавливает ответ API (stop_reason="tool_use"), поэтому мы получаем
+// КАЖДЫЙ найденный ресурс отдельным API-ответом сразу, как только он найден
+// (передаём его в onResource и тут же сохраняем в БД в discoverHiringResources.ts),
+// а не одним пакетом в самом конце. Это же даёт естественную точку для
+// остановки по запросу пользователя: после каждого ресурса, перед тем как
+// отправить tool_result и продолжить цикл, проверяем shouldStop().
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config';
 import { createAnthropicClient } from './anthropicClient';
@@ -10,88 +18,96 @@ import {
   CATEGORY_LABELS,
   type HiringResourceCandidate,
   type HiringResourceRunParams,
-  type HiringResourceSearchResult,
+  type HiringResourceSearchOutcome,
 } from './hiringResourceTypes';
 
 const MODEL = 'claude-sonnet-5';
 const MAX_SEARCHES = 40;
 const MAX_FETCHES = 40;
-// Каждая продолжающаяся (pause_turn) итерация — отдельный запрос к API;
-// ограничиваем, чтобы аномально долгий агентный прогон не тянул счёт бесконечно.
-const MAX_LOOP_ITERATIONS = 20;
+// Каждый вызов report_resource и каждая продолжающаяся (pause_turn) итерация
+// — отдельный запрос к API; ограничиваем, чтобы аномально долгий агентный
+// прогон не тянул счёт бесконечно, даже если пользователь не остановит сам.
+const MAX_LOOP_ITERATIONS = 120;
 
-const REPORT_TOOL_NAME = 'report_hiring_resources';
+const REPORT_TOOL_NAME = 'report_resource';
+const FINISH_TOOL_NAME = 'finish_search';
+
+const resourceInputSchema = {
+  type: 'object' as const,
+  properties: {
+    name: { type: 'string', description: 'Название ресурса или организации' },
+    url: { type: 'string', description: 'Основной адрес сайта, канала или страницы' },
+    category: {
+      type: 'string',
+      enum: ['recruiting_agency', 'hr_agency', 'direct_employer', 'telegram', 'community', 'social', 'job_board'],
+    },
+    roles: {
+      type: 'array',
+      items: { type: 'string', enum: ['hires_own', 'sources_for_clients', 'distributes_vacancies'] },
+      description: 'Одна или несколько ролей ресурса в найме',
+    },
+    organizationName: {
+      type: ['string', 'null'],
+      description: 'Владелец ресурса, если установлен — используется для группировки дублей одной организации',
+    },
+    hiringGeography: {
+      type: ['string', 'null'],
+      description: 'Где ищут сотрудников (НЕ местонахождение агентства). "Не найдено", если не удалось установить',
+    },
+    agencyLocation: { type: ['string', 'null'], description: 'Местонахождение самой организации/агентства, если применимо' },
+    specialization: { type: ['string', 'null'], description: 'Отрасли/профессии' },
+    evidenceSummary: { type: 'string', description: 'Краткое описание обнаруженного признака найма/подбора/публикации вакансий' },
+    evidenceUrl: { type: 'string', description: 'Прямая ссылка на страницу услуги, вакансии или конкретную публикацию — не на выдачу поиска' },
+    lastRelevantDate: {
+      type: ['string', 'null'],
+      description: 'ISO-дата (YYYY-MM-DD) вакансии/публикации, если реально найдена на странице. Иначе null — не придумывать.',
+    },
+    contactMethod: { type: ['string', 'null'], description: 'Форма отклика, размещения вакансии или заказа подбора' },
+    publicContact: { type: ['string', 'null'], description: 'Только явно опубликованный на странице контакт по вопросу найма' },
+    status: {
+      type: 'string',
+      enum: ['confirmed', 'needs_review', 'excluded'],
+      description: 'confirmed — все обязательные условия отбора выполнены; needs_review — страницу не удалось полностью проверить; excluded — не подходит',
+    },
+    exclusionReason: { type: ['string', 'null'], description: 'Обязательно при status="excluded" — короткая причина' },
+    relatedResources: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'URL других найденных ресурсов (сайт/соцсети/канал) той же организации',
+    },
+    uncertainties: { type: ['string', 'null'], description: 'Что не удалось установить по этому ресурсу' },
+  },
+  required: [
+    'name', 'url', 'category', 'roles', 'organizationName', 'hiringGeography', 'agencyLocation',
+    'specialization', 'evidenceSummary', 'evidenceUrl', 'lastRelevantDate', 'contactMethod',
+    'publicContact', 'status', 'exclusionReason', 'relatedResources', 'uncertainties',
+  ],
+  additionalProperties: false,
+};
 
 const reportTool: Anthropic.Tool = {
   name: REPORT_TOOL_NAME,
   description:
-    'Сообщить итоговый список найденных и проверенных ресурсов найма. Вызови этот инструмент ровно один раз, когда закончишь поиск — при достижении нужного числа подтверждённых ресурсов, бюджета запросов или когда источники по заданным критериям исчерпаны.',
+    'Сообщить ОДИН найденный и проверенный ресурс найма. Вызывай этот инструмент сразу после проверки каждого подходящего ресурса (включая needs_review и excluded, которые ты явно проверял) — не копи результаты, не жди, пока найдёшь всё.',
+  strict: true,
+  input_schema: resourceInputSchema,
+};
+
+const finishTool: Anthropic.Tool = {
+  name: FINISH_TOOL_NAME,
+  description:
+    'Вызови РОВНО ОДИН РАЗ, когда закончишь поиск — при достижении нужного числа подтверждённых ресурсов, бюджета запросов или когда источники по заданным критериям исчерпаны.',
   strict: true,
   input_schema: {
     type: 'object',
     properties: {
-      resources: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'Название ресурса или организации' },
-            url: { type: 'string', description: 'Основной адрес сайта, канала или страницы' },
-            category: {
-              type: 'string',
-              enum: ['recruiting_agency', 'hr_agency', 'direct_employer', 'telegram', 'community', 'social', 'job_board'],
-            },
-            roles: {
-              type: 'array',
-              items: { type: 'string', enum: ['hires_own', 'sources_for_clients', 'distributes_vacancies'] },
-              description: 'Одна или несколько ролей ресурса в найме',
-            },
-            organizationName: {
-              type: ['string', 'null'],
-              description: 'Владелец ресурса, если установлен — используется для группировки дублей одной организации',
-            },
-            hiringGeography: {
-              type: ['string', 'null'],
-              description: 'Где ищут сотрудников (НЕ местонахождение агентства). "Не найдено", если не удалось установить',
-            },
-            agencyLocation: { type: ['string', 'null'], description: 'Местонахождение самой организации/агентства, если применимо' },
-            specialization: { type: ['string', 'null'], description: 'Отрасли/профессии' },
-            evidenceSummary: { type: 'string', description: 'Краткое описание обнаруженного признака найма/подбора/публикации вакансий' },
-            evidenceUrl: { type: 'string', description: 'Прямая ссылка на страницу услуги, вакансии или конкретную публикацию — не на выдачу поиска' },
-            lastRelevantDate: {
-              type: ['string', 'null'],
-              description: 'ISO-дата (YYYY-MM-DD) вакансии/публикации, если реально найдена на странице. Иначе null — не придумывать.',
-            },
-            contactMethod: { type: ['string', 'null'], description: 'Форма отклика, размещения вакансии или заказа подбора' },
-            publicContact: { type: ['string', 'null'], description: 'Только явно опубликованный на странице контакт по вопросу найма' },
-            status: {
-              type: 'string',
-              enum: ['confirmed', 'needs_review', 'excluded'],
-              description: 'confirmed — все обязательные условия отбора выполнены; needs_review — страницу не удалось полностью проверить; excluded — не подходит',
-            },
-            exclusionReason: { type: ['string', 'null'], description: 'Обязательно при status="excluded" — короткая причина' },
-            relatedResources: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'URL других найденных ресурсов (сайт/соцсети/канал) той же организации',
-            },
-            uncertainties: { type: ['string', 'null'], description: 'Что не удалось установить по этому ресурсу' },
-          },
-          required: [
-            'name', 'url', 'category', 'roles', 'organizationName', 'hiringGeography', 'agencyLocation',
-            'specialization', 'evidenceSummary', 'evidenceUrl', 'lastRelevantDate', 'contactMethod',
-            'publicContact', 'status', 'exclusionReason', 'relatedResources', 'uncertainties',
-          ],
-          additionalProperties: false,
-        },
-      },
       limitations: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Категории или условия из задания, которые не удалось покрыть в рамках бюджета запросов — не заполнять список нерелевантными результатами вместо этого',
+        description: 'Категории или условия из задания, которые не удалось покрыть в рамках бюджета запросов',
       },
     },
-    required: ['resources', 'limitations'],
+    required: ['limitations'],
     additionalProperties: false,
   },
 };
@@ -138,10 +154,9 @@ function buildSystemPrompt(): string {
     'Формулируй запросы как сочетания: тип ресурса + действие по найму + профессия/отрасль + география. Используй синонимы: "подбор сотрудников", "кадровое агентство", "поиск специалистов", "присоединяйтесь к команде", careers, hiring, recruitment, staffing. Примеры: "подбор персонала" "логистика" "Казань"; "рекрутинговое агентство" "инженеры"; site:t.me "ищем" "разработчик"; site:vk.com "вакансии" "строительство".',
     'НЕ предлагай общие агрегаторы вакансий (hh.ru, LinkedIn, Indeed, SuperJob и т.п.), если они не входят в разрешённые категории задания.',
     '',
-    '## Приоритизация (раздел 9) — не выставляй числовой балл сам, это делает код после тебя',
-    '',
-    'Не придумывай контакты, специализацию, географию, даты — используй null/"Не найдено", когда не удалось установить.',
-    `Когда закончишь (достигнут targetCount подтверждённых ресурсов, либо бюджет запросов исчерпан, либо источники исчерпаны) — вызови ${REPORT_TOOL_NAME} РОВНО ОДИН РАЗ со всем итоговым списком (включая needs_review и excluded, которые ты явно проверял) и списком limitations — что не удалось покрыть.`,
+    '## Порядок работы',
+    `Как только проверил очередной ресурс — сразу вызови ${REPORT_TOOL_NAME} с ним (по одному, не копи в список). Не придумывай контакты, специализацию, географию, даты — используй null/"Не найдено", когда не удалось установить.`,
+    `Когда закончишь (достигнут targetCount подтверждённых ресурсов, либо бюджет запросов исчерпан, либо источники исчерпаны) — вызови ${FINISH_TOOL_NAME} РОВНО ОДИН РАЗ со списком limitations — что не удалось покрыть.`,
   ].join('\n');
 }
 
@@ -183,8 +198,9 @@ function buildUserPrompt(params: HiringResourceRunParams, assumptions: string[])
 export async function searchHiringResources(
   params: HiringResourceRunParams,
   assumptions: string[],
-  onProgress?: (queriesUsed: number) => void | Promise<void>,
-): Promise<HiringResourceSearchResult> {
+  onResource: (resource: HiringResourceCandidate) => Promise<void>,
+  shouldStop: () => Promise<boolean>,
+): Promise<HiringResourceSearchOutcome> {
   if (!config.anthropicApiKey) {
     throw new Error('ANTHROPIC_API_KEY не настроен — поиск ресурсов найма недоступен');
   }
@@ -196,16 +212,18 @@ export async function searchHiringResources(
   ];
 
   let queriesUsed = 0;
+  let foundCount = 0;
 
   for (let i = 0; i < MAX_LOOP_ITERATIONS; i++) {
     const response = await client.messages.create({
       model: MODEL,
-      max_tokens: 16000,
+      max_tokens: 8000,
       system: buildSystemPrompt(),
       tools: [
         { type: 'web_search_20260209', name: 'web_search', max_uses: MAX_SEARCHES },
         { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: MAX_FETCHES },
         reportTool,
+        finishTool,
       ],
       messages,
     });
@@ -215,10 +233,6 @@ export async function searchHiringResources(
         queriesUsed += 1;
       }
     }
-    // Отчёт о прогрессе после каждой итерации агентного цикла — приложение
-    // опрашивает HiringResourceRun.queriesUsed, чтобы показать статус-бар
-    // во время долгого поиска (одиночный HTTP-ответ пришёл бы только в конце).
-    await onProgress?.(queriesUsed);
 
     if (response.stop_reason === 'refusal') {
       throw new Error('Запрос отклонён моделью (refusal)');
@@ -229,17 +243,39 @@ export async function searchHiringResources(
       continue;
     }
 
-    const toolUse = response.content.find(
-      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use' && block.name === REPORT_TOOL_NAME,
+    const finishUse = response.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use' && block.name === FINISH_TOOL_NAME,
     );
-    if (toolUse) {
-      const input = toolUse.input as { resources: HiringResourceCandidate[]; limitations: string[] };
-      return { resources: input.resources ?? [], queriesUsed, limitations: input.limitations ?? [] };
+    if (finishUse) {
+      const input = finishUse.input as { limitations: string[] };
+      return { queriesUsed, foundCount, limitations: input.limitations ?? [], stoppedByUser: false };
     }
 
+    const reportUse = response.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use' && block.name === REPORT_TOOL_NAME,
+    );
+    if (reportUse) {
+      const resource = reportUse.input as HiringResourceCandidate;
+      await onResource(resource);
+      foundCount += 1;
+
+      if (await shouldStop()) {
+        return { queriesUsed, foundCount, limitations: [], stoppedByUser: true };
+      }
+
+      messages.push({ role: 'assistant', content: response.content });
+      messages.push({
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: reportUse.id, content: 'Записано. Продолжай поиск.' }],
+      });
+      continue;
+    }
+
+    // Модель закончила (end_turn/max_tokens), ни разу не вызвав finish_search —
+    // считаем поиск естественно завершённым с тем, что уже нашли.
     const textBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === 'text');
-    return { resources: [], queriesUsed, limitations: [], rawText: textBlock?.text };
+    return { queriesUsed, foundCount, limitations: [], stoppedByUser: false, rawText: textBlock?.text };
   }
 
-  throw new Error('Превышено число итераций поиска — слишком долгий агентный прогон');
+  return { queriesUsed, foundCount, limitations: ['Превышено число итераций поиска — остановлено автоматически'], stoppedByUser: false };
 }

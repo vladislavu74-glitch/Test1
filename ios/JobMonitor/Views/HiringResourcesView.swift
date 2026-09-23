@@ -21,6 +21,12 @@ struct HiringResourcesView: View {
                             Text(statusText)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Остановить", role: .destructive) {
+                                viewModel.stopDiscovery()
+                            }
+                            .font(.footnote)
+                            .disabled(viewModel.stopRequestSent || (viewModel.currentRun?.stopRequested ?? false))
                         }
                     }
                 } else if let run = viewModel.currentRun, run.status == "error" {
@@ -29,10 +35,10 @@ struct HiringResourcesView: View {
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
-                } else if let run = viewModel.currentRun, run.status == "done" {
+                } else if let run = viewModel.currentRun, run.status == "done" || run.status == "stopped" {
                     Section {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Готово: подтверждено \(run.confirmedCount), на проверке \(run.needsReviewCount), исключено \(run.excludedCount), организаций \(run.organizationCount)")
+                            Text("\(run.status == "stopped" ? "Остановлено пользователем" : "Готово"): подтверждено \(run.confirmedCount), на проверке \(run.needsReviewCount), исключено \(run.excludedCount), организаций \(run.organizationCount)")
                                 .font(.footnote)
                             ForEach(run.limitations, id: \.self) { limitation in
                                 Text("⚠️ \(limitation)")

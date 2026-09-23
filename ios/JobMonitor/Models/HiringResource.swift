@@ -133,7 +133,8 @@ struct HiringResourceRun: Codable, Identifiable {
     let startedAt: Date
     let finishedAt: Date?
     let trigger: String
-    let status: String // "running" | "done" | "error"
+    let status: String // "running" | "done" | "stopped" | "error"
+    let stopRequested: Bool
     let paramsJson: String
     let confirmedCount: Int
     let needsReviewCount: Int
@@ -144,7 +145,7 @@ struct HiringResourceRun: Codable, Identifiable {
     let error: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, startedAt, finishedAt, trigger, status
+        case id, startedAt, finishedAt, trigger, status, stopRequested
         case paramsJson = "paramsJson"
         case confirmedCount, needsReviewCount, excludedCount, organizationCount
         case limitationsJson = "limitations"
