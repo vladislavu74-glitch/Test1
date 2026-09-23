@@ -101,6 +101,28 @@ function buildUserPrompt(jobTitles: string[], countries: string[], cities: strin
   return lines.join('\n');
 }
 
+const CACHE_CONTROL: Anthropic.CacheControlEphemeral = { type: 'ephemeral' };
+
+// Кэширование промпта: system/tools одинаковы на каждой итерации цикла
+// pause_turn, а history только растёт — без cache_control длинный агентный
+// прогон (много web_search) заново оплачивал бы системный промпт и всю
+// накопленную историю на каждой продолжающейся итерации.
+function withCacheBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  const blocks: Anthropic.ContentBlockParam[] =
+    typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : [...last.content];
+  // thinking/redacted_thinking блоки не поддерживают cache_control — ищем
+  // последний блок, который его поддерживает.
+  let index = -1;
+  for (let j = blocks.length - 1; j >= 0; j--) {
+    if (blocks[j].type !== 'thinking' && blocks[j].type !== 'redacted_thinking') { index = j; break; }
+  }
+  if (index === -1) return messages;
+  blocks[index] = { ...blocks[index], cache_control: CACHE_CONTROL } as Anthropic.ContentBlockParam;
+  return [...messages.slice(0, -1), { ...last, content: blocks }];
+}
+
 export async function searchForVacancySources(params: {
   jobTitles: string[];
   countries: string[];
@@ -120,9 +142,12 @@ export async function searchForVacancySources(params: {
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 8000,
-      system: buildSystemPrompt(),
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: MAX_SEARCHES }, reportTool],
-      messages,
+      system: [{ type: 'text', text: buildSystemPrompt(), cache_control: CACHE_CONTROL }],
+      tools: [
+        { type: 'web_search_20260209', name: 'web_search', max_uses: MAX_SEARCHES },
+        { ...reportTool, cache_control: CACHE_CONTROL },
+      ],
+      messages: withCacheBreakpoint(messages),
     });
 
     if (response.stop_reason === 'refusal') {

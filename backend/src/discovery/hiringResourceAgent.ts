@@ -28,6 +28,11 @@ const MAX_FETCHES = 40;
 // — отдельный запрос к API; ограничиваем, чтобы аномально долгий агентный
 // прогон не тянул счёт бесконечно, даже если пользователь не остановит сам.
 const MAX_LOOP_ITERATIONS = 120;
+// MAX_SEARCHES/MAX_FETCHES ограничивают один вызов messages.create, но при
+// report_resource-цикле вызовов за один прогон может быть много — этот лимит
+// суммарный по всему прогону, отдельный предохранитель по стоимости на
+// случай широкого поиска без ограничений по гео/категориям.
+const MAX_TOTAL_QUERIES = 80;
 
 const REPORT_TOOL_NAME = 'report_resource';
 const FINISH_TOOL_NAME = 'finish_search';
@@ -195,6 +200,32 @@ function buildUserPrompt(params: HiringResourceRunParams, assumptions: string[])
   return lines.join('\n');
 }
 
+const CACHE_CONTROL: Anthropic.CacheControlEphemeral = { type: 'ephemeral' };
+
+// Система/промпт-кэширование: system и tools одинаковы на каждой итерации
+// цикла, и сама история messages лишь растёт — без cache_control каждый
+// найденный ресурс означал бы полную стоимость системного промпта, описаний
+// инструментов и всей предыдущей истории заново. Отмечаем брейкпоинт кэша на
+// последнем блоке ПОСЛЕДНЕГО сообщения — только для отправляемой копии,
+// сама сохранённая history остаётся без пометок, иначе за много итераций
+// накопилось бы больше брейкпоинтов, чем разрешает API (максимум 4 на запрос).
+function withCacheBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  const blocks: Anthropic.ContentBlockParam[] =
+    typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : [...last.content];
+  // thinking/redacted_thinking блоки не поддерживают cache_control — ищем
+  // последний блок, который его поддерживает (thinking, если и встречается,
+  // то только у ассистента и обычно не последним блоком).
+  let index = -1;
+  for (let j = blocks.length - 1; j >= 0; j--) {
+    if (blocks[j].type !== 'thinking' && blocks[j].type !== 'redacted_thinking') { index = j; break; }
+  }
+  if (index === -1) return messages;
+  blocks[index] = { ...blocks[index], cache_control: CACHE_CONTROL } as Anthropic.ContentBlockParam;
+  return [...messages.slice(0, -1), { ...last, content: blocks }];
+}
+
 export async function searchHiringResources(
   params: HiringResourceRunParams,
   assumptions: string[],
@@ -218,20 +249,29 @@ export async function searchHiringResources(
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 8000,
-      system: buildSystemPrompt(),
+      system: [{ type: 'text', text: buildSystemPrompt(), cache_control: CACHE_CONTROL }],
       tools: [
         { type: 'web_search_20260209', name: 'web_search', max_uses: MAX_SEARCHES },
         { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: MAX_FETCHES },
         reportTool,
-        finishTool,
+        { ...finishTool, cache_control: CACHE_CONTROL },
       ],
-      messages,
+      messages: withCacheBreakpoint(messages),
     });
 
     for (const block of response.content) {
       if (block.type === 'server_tool_use' && (block.name === 'web_search' || block.name === 'web_fetch')) {
         queriesUsed += 1;
       }
+    }
+
+    if (queriesUsed >= MAX_TOTAL_QUERIES) {
+      return {
+        queriesUsed,
+        foundCount,
+        limitations: [`Достигнут предохранитель по суммарному числу запросов (${MAX_TOTAL_QUERIES}) — поиск остановлен автоматически, часть категорий/географии могла остаться не покрытой.`],
+        stoppedByUser: false,
+      };
     }
 
     if (response.stop_reason === 'refusal') {
