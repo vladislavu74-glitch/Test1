@@ -124,10 +124,22 @@ final class HiringResourcesViewModel: ObservableObject {
         Task {
             do {
                 try await client.stopHiringResourceDiscovery(id: runId)
+            } catch APIError.server(409, _) {
+                // Безобидная гонка: пока статус-бар ещё не переопросил backend
+                // (опрос раз в 3 секунды), запуск уже успел завершиться сам —
+                // "остановить" уже нечего. Не ошибка для пользователя, просто
+                // обновляем статус, чтобы статус-бар сразу перестал висеть.
+                await pollOnce()
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func pollOnce() async {
+        guard let runId = currentRun?.id else { return }
+        currentRun = try? await client.fetchHiringResourceRun(id: runId)
+        await load()
     }
 
     /// Опрашивает статус запуска каждые пару секунд, пока он не завершится —
