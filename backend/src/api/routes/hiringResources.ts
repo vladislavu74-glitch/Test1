@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../db/client';
 import { startHiringResourceDiscovery, requestStopHiringResourceDiscovery } from '../../jobs/discoverHiringResources';
+import { buildHiringResourceExport, importHiringResources } from '../../discovery/hiringResourceTransfer';
 import type { HiringResourceRunParams } from '../../discovery/hiringResourceTypes';
 
 export const hiringResourcesRouter = Router();
@@ -83,6 +84,28 @@ hiringResourcesRouter.get('/summary', async (_req, res) => {
 hiringResourcesRouter.post('/mark-all-seen', async (_req, res) => {
   await prisma.hiringResource.updateMany({ where: { isNew: true }, data: { isNew: false } });
   res.status(204).end();
+});
+
+// Отдаёт весь каталог ресурсов найма как скачиваемый JSON-файл — чтобы
+// перенести найденное на другую установку приложения (другой backend/БД).
+hiringResourcesRouter.get('/export', async (_req, res) => {
+  const file = await buildHiringResourceExport();
+  const filename = `hiring-resources-${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.json(file);
+});
+
+// Принимает файл того же формата (или голый массив ресурсов) и заводит/
+// обновляет ресурсы в текущей БД — по нормализованному URL, как и обычный
+// поиск (см. discoverHiringResources.ts). Импортированные ресурсы отмечены
+// isNew=true: для этой установки приложения они действительно новые.
+hiringResourcesRouter.post('/import', async (req, res) => {
+  try {
+    const result = await importHiringResources(req.body);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message });
+  }
 });
 
 hiringResourcesRouter.get('/:id', async (req, res) => {

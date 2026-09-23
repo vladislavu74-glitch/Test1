@@ -1,19 +1,67 @@
 import SwiftUI
 
-/// Параметры запуска поиска ресурсов найма (раздел 1 требования). Списки
-/// (страны/города/специализация/языки/исключения) — простой ввод через
-/// запятую, без отдельного справочника: незаданное поле backend трактует
-/// как "не ограничено" и явно фиксирует это как допущение в отчёте запуска.
+/// Параметры запуска поиска ресурсов найма (раздел 1 требования). Страны —
+/// явный список с добавлением/удалением (реальное ограничение поиска, не
+/// текст-подсказка для модели); остальные списки (города/специализация/
+/// языки/исключения) — через запятую. Незаданное поле backend трактует как
+/// "не ограничено" и явно фиксирует это как допущение в отчёте запуска.
 struct HiringResourceSearchParamsView: View {
     @ObservedObject var viewModel: HiringResourcesViewModel
     @Environment(\.dismiss) private var dismiss
 
+    // Небольшой набор стран для быстрого выбора одним тапом — поиск ресурсов
+    // найма не ограничен СНГ (в отличие от справочника вакансий в
+    // «Критериях»), поэтому это просто подсказка, а не единственный вариант:
+    // свою страну всегда можно ввести и добавить вручную ниже.
+    private let quickPickCountries = [
+        "Россия", "Казахстан", "Беларусь", "Узбекистан", "Киргизия",
+        "Германия", "Польша", "США", "Великобритания", "ОАЭ",
+    ]
+
     var body: some View {
         Form {
-            Section("География") {
-                TextField("Страны через запятую (пусто — не ограничено)", text: $viewModel.countriesText)
-                TextField("Города через запятую", text: $viewModel.citiesText)
+            Section {
+                if viewModel.selectedCountries.isEmpty {
+                    Text("Не ограничено — поиск по всем странам")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(viewModel.selectedCountries, id: \.self) { country in
+                        Text(country)
+                    }
+                    .onDelete(perform: viewModel.removeCountries)
+                }
+
+                HStack {
+                    TextField("Добавить страну", text: $viewModel.newCountryText)
+                        .onSubmit { viewModel.addCountry(viewModel.newCountryText) }
+                    Button {
+                        viewModel.addCountry(viewModel.newCountryText)
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .disabled(viewModel.newCountryText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                let remainingQuickPicks = quickPickCountries.filter { pick in
+                    !viewModel.selectedCountries.contains { $0.caseInsensitiveCompare(pick) == .orderedSame }
+                }
+                if !remainingQuickPicks.isEmpty {
+                    Menu {
+                        ForEach(remainingQuickPicks, id: \.self) { country in
+                            Button(country) { viewModel.addCountry(country) }
+                        }
+                    } label: {
+                        Label("Быстрый выбор", systemImage: "chevron.down.circle")
+                    }
+                }
+
+                TextField("Города через запятую (необязательно)", text: $viewModel.citiesText)
                 Toggle("Включать удалённую работу", isOn: $viewModel.includeRemote)
+            } header: {
+                Text("География")
+            } footer: {
+                Text("Ресурс должен соответствовать хотя бы одной из выбранных стран — это обязательное условие отбора, а не просто подсказка.")
             }
 
             Section("Специализация") {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Список найденных и проверенных ресурсов найма (сайты, каналы, сообщества,
 /// соцстраницы) — единица результата ресурс, а не вакансия. Поиск запускается
@@ -92,8 +93,52 @@ struct HiringResourcesView: View {
             }
             .refreshable { await viewModel.load() }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Button {
+                            Task { await viewModel.exportResources() }
+                        } label: {
+                            Label("Экспортировать файлом", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(viewModel.isExporting || viewModel.resources.isEmpty)
+
+                        Button {
+                            viewModel.showImporter = true
+                        } label: {
+                            Label("Импортировать из файла", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(viewModel.isImporting)
+                    } label: {
+                        if viewModel.isExporting || viewModel.isImporting {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Просмотрено") { Task { await viewModel.markAllSeen() } }
+                }
+            }
+            .fileExporter(
+                isPresented: $viewModel.showExporter,
+                document: viewModel.exportDocument,
+                contentType: .json,
+                defaultFilename: "hiring-resources"
+            ) { result in
+                if case .failure(let error) = result {
+                    viewModel.errorMessage = error.localizedDescription
+                }
+            }
+            .fileImporter(
+                isPresented: $viewModel.showImporter,
+                allowedContentTypes: [.json]
+            ) { result in
+                switch result {
+                case .success(let url):
+                    Task { await viewModel.importResources(from: url) }
+                case .failure(let error):
+                    viewModel.errorMessage = error.localizedDescription
                 }
             }
             .alert(
@@ -106,6 +151,17 @@ struct HiringResourcesView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.errorMessage ?? "")
+            }
+            .alert(
+                "Импорт завершён",
+                isPresented: Binding(
+                    get: { viewModel.importResultMessage != nil },
+                    set: { if !$0 { viewModel.importResultMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.importResultMessage ?? "")
             }
         }
     }

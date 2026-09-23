@@ -127,6 +127,15 @@ model HiringResource {
   contactMethod    String?
   publicContact    String?
 
+  // Явная конфигурация коннектора для скана вакансий, например
+  // {"connector":"headhunter","areaId":113} или {"connector":"ats_board",
+  // "provider":"greenhouse","boardSlug":"acme"} — только для источников с
+  // техническим API/фидом (hh.ru, SuperJob, Habr Career, ATS-доски,
+  // RSS-ленты), заводимых сидом или вручную. Если не задано, src/jobs/scan.ts
+  // сам выводит коннектор из category (generic_site/telegram_channel) — так
+  // работают ресурсы, которые находит ИИ-агент.
+  scanConfig String?
+
   // "confirmed" | "needs_review" | "excluded"
   status          String
   exclusionReason String?

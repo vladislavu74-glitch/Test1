@@ -160,3 +160,11 @@ struct HiringResourceRun: Codable, Identifiable {
         return array
     }
 }
+
+/// Ответ POST /api/hiring-resources/import.
+struct ImportResourcesResult: Codable {
+    let total: Int
+    let created: Int
+    let updated: Int
+    let errors: [String]
+}

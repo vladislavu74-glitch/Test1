@@ -10,7 +10,10 @@ import { hiringResourcesRouter } from './routes/hiringResources';
 export function createApp(): Express {
   const app = express();
   app.use(cors());
-  app.use(express.json());
+  // Дефолтный лимит express.json() — 100kb, экспорт/импорт ресурсов найма
+  // (POST /api/hiring-resources/import) может быть заметно больше при
+  // крупном каталоге.
+  app.use(express.json({ limit: '20mb' }));
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 

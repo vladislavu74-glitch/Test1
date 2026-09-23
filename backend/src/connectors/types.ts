@@ -19,12 +19,15 @@ export interface RawVacancy {
 }
 
 // Построен на лету из подтверждённого HiringResource перед каждым сканом
-// (см. src/jobs/scan.ts) — не хранится в БД отдельной записью.
+// (см. src/jobs/scan.ts, toSourceRecord) — не хранится в БД отдельной
+// записью. Для ресурсов с заполненным HiringResource.scanConfig kind/config
+// берутся оттуда как есть (hh.ru/SuperJob/Habr Career/ATS-доска/RSS-лента);
+// для остальных — выводятся из категории (generic_site/telegram_channel).
 export interface SourceRecord {
   id: string;
   key: string;
   name: string;
-  kind: 'generic_site' | 'telegram_channel';
+  kind: 'api' | 'ats' | 'rss' | 'generic_site' | 'telegram_channel';
   country?: string | null;
   config: string;
 }

@@ -152,3 +152,83 @@ describe('GET /api/hiring-resources/summary and mark-all-seen', () => {
     expect(after.body.newCount).toBe(0);
   });
 });
+
+describe('GET /api/hiring-resources/export and POST /import', () => {
+  it('exports the full catalog and re-imports it into an empty database unchanged', async () => {
+    const org = await prisma.organization.create({ data: { name: 'Acme' } });
+    await prisma.hiringResource.create({
+      data: {
+        name: 'Acme Careers', url: 'https://acme.example/careers', category: 'direct_employer', status: 'confirmed',
+        evidenceSummary: 'Публикует вакансии', evidenceUrl: 'https://acme.example/careers/1',
+        organizationId: org.id, hiringGeography: 'Москва', score: 90,
+      },
+    });
+
+    const exported = await request(app).get('/api/hiring-resources/export').set(authHeader).expect(200);
+    expect(exported.body.format).toBe('jobmonitor.hiring-resources');
+    expect(exported.body.resources).toHaveLength(1);
+    expect(exported.body.resources[0].organizationName).toBe('Acme');
+
+    await prisma.hiringResource.deleteMany();
+    await prisma.organization.deleteMany();
+
+    const imported = await request(app)
+      .post('/api/hiring-resources/import')
+      .set(authHeader)
+      .send(exported.body)
+      .expect(200);
+    expect(imported.body).toMatchObject({ total: 1, created: 1, updated: 0, errors: [] });
+
+    const list = await request(app).get('/api/hiring-resources').set(authHeader).expect(200);
+    expect(list.body).toHaveLength(1);
+    expect(list.body[0].name).toBe('Acme Careers');
+    expect(list.body[0].organization.name).toBe('Acme');
+    expect(list.body[0].isNew).toBe(true);
+  });
+
+  it('re-importing the same resource updates it in place instead of duplicating', async () => {
+    const payload = {
+      format: 'jobmonitor.hiring-resources',
+      version: 1,
+      resources: [
+        {
+          name: 'Acme Careers', url: 'https://acme.example/careers', category: 'direct_employer',
+          roles: ['hires_own'], organizationName: null, hiringGeography: null, agencyLocation: null,
+          specialization: null, evidenceSummary: 'x', evidenceUrl: 'https://acme.example/careers',
+          lastRelevantDate: null, contactMethod: null, publicContact: null, status: 'confirmed',
+          exclusionReason: null, relatedResources: [], uncertainties: null,
+          score: 50, scoreGeoSpec: 10, scoreEvidence: 10, scoreRecency: 10, scoreContact: 10,
+          checkedAt: new Date().toISOString(), firstSeenAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    await request(app).post('/api/hiring-resources/import').set(authHeader).send(payload).expect(200);
+    const second = await request(app).post('/api/hiring-resources/import').set(authHeader).send(payload).expect(200);
+
+    expect(second.body).toMatchObject({ total: 1, created: 0, updated: 1 });
+    const count = await prisma.hiringResource.count();
+    expect(count).toBe(1);
+  });
+
+  it('accepts a bare array of resources as well as the full export shape', async () => {
+    const bareArray = [
+      {
+        name: 'Bare Resource', url: 'https://bare.example/', category: 'job_board',
+        roles: [], organizationName: null, hiringGeography: null, agencyLocation: null,
+        specialization: null, evidenceSummary: 'x', evidenceUrl: 'https://bare.example/',
+        lastRelevantDate: null, contactMethod: null, publicContact: null, status: 'confirmed',
+        exclusionReason: null, relatedResources: [], uncertainties: null,
+        score: 0, scoreGeoSpec: 0, scoreEvidence: 0, scoreRecency: 0, scoreContact: 0,
+        checkedAt: new Date().toISOString(), firstSeenAt: new Date().toISOString(),
+      },
+    ];
+
+    const result = await request(app).post('/api/hiring-resources/import').set(authHeader).send(bareArray).expect(200);
+    expect(result.body).toMatchObject({ total: 1, created: 1 });
+  });
+
+  it('rejects a payload that is neither an export file nor an array', async () => {
+    await request(app).post('/api/hiring-resources/import').set(authHeader).send({ nonsense: true }).expect(400);
+  });
+});

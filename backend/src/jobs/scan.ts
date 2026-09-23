@@ -145,8 +145,28 @@ function extractTelegramUsername(url: string): string | null {
 }
 
 // Строит SourceRecord для коннектора на лету из подтверждённого
-// HiringResource — никакой отдельной технической записи не хранится.
-function toSourceRecord(resource: { id: string; name: string; url: string; category: string }): SourceRecord | null {
+// HiringResource — никакой отдельной технической записи не хранится. Если
+// у ресурса явно задан scanConfig (hh.ru/SuperJob/Habr Career/ATS-доска/
+// RSS-лента — заводятся сидом или вручную), используем его как есть;
+// иначе выводим generic_site/telegram_channel из category, как для
+// ресурсов, которые находит ИИ-агент.
+function toSourceRecord(resource: {
+  id: string;
+  name: string;
+  url: string;
+  category: string;
+  scanConfig: string | null;
+}): SourceRecord | null {
+  if (resource.scanConfig) {
+    return {
+      id: resource.id,
+      key: resource.id,
+      name: resource.name,
+      kind: 'api',
+      config: resource.scanConfig,
+    };
+  }
+
   if (resource.category === 'telegram') {
     const channelUsername = extractTelegramUsername(resource.url);
     if (!channelUsername) return null;

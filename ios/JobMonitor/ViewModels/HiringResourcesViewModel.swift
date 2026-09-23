@@ -10,10 +10,12 @@ final class HiringResourcesViewModel: ObservableObject {
     @Published var categoryFilter: ResourceCategory?
     @Published var statusFilter: String? // "confirmed" | "needs_review" | "excluded" | nil (все)
 
-    // Параметры запуска (раздел 1) — простые текстовые поля со списками через
-    // запятую, без отдельного справочника стран/городов (тот, что уже есть
-    // для критериев вакансий, — для более простого набора полей здесь).
-    @Published var countriesText = ""
+    // Параметры запуска (раздел 1). Страны — отдельный список с явным
+    // добавлением/удалением (реальное ограничение поиска по географии, а не
+    // текст-подсказка), остальные списки (города/специализация/языки/
+    // исключения) — через запятую без отдельного справочника.
+    @Published var selectedCountries: [String] = []
+    @Published var newCountryText = ""
     @Published var citiesText = ""
     @Published var includeRemote = true
     @Published var specializationText = ""
@@ -30,6 +32,14 @@ final class HiringResourcesViewModel: ObservableObject {
     // Локальный флаг для мгновенной обратной связи по нажатию "Остановить" —
     // сам run.stopRequested подтянется опросом через пару секунд.
     @Published var stopRequestSent = false
+
+    // Экспорт/импорт (перенос каталога на другую установку приложения).
+    @Published var isExporting = false
+    @Published var isImporting = false
+    @Published var exportDocument: JSONFileDocument?
+    @Published var showExporter = false
+    @Published var showImporter = false
+    @Published var importResultMessage: String?
 
     private let client: APIClient
     private var pollTask: Task<Void, Never>?
@@ -66,10 +76,24 @@ final class HiringResourcesViewModel: ObservableObject {
             .filter { !$0.isEmpty }
     }
 
+    /// Добавляет страну из текстового поля (или пункта быстрого выбора) в
+    /// список ограничения по географии — без дублей, без учёта регистра.
+    func addCountry(_ raw: String) {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        guard !selectedCountries.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return }
+        selectedCountries.append(name)
+        newCountryText = ""
+    }
+
+    func removeCountries(at offsets: IndexSet) {
+        selectedCountries.remove(atOffsets: offsets)
+    }
+
     func startDiscovery() {
         let params = HiringResourceRunParams(
             geography: .init(
-                countries: splitList(countriesText),
+                countries: selectedCountries,
                 cities: splitList(citiesText),
                 remote: includeRemote
             ),
@@ -139,6 +163,42 @@ final class HiringResourcesViewModel: ObservableObject {
             guard let last = try? await client.fetchHiringResourceRuns().first, last.isRunning else { return }
             await pollRun(id: last.id)
         }
+    }
+
+    /// Готовит файл экспорта и открывает системный диалог сохранения —
+    /// дальше пользователь сам решает, куда его положить (Файлы, AirDrop на
+    /// другое устройство и т.п.).
+    func exportResources() async {
+        isExporting = true
+        errorMessage = nil
+        do {
+            let data = try await client.exportHiringResources()
+            exportDocument = JSONFileDocument(data: data)
+            showExporter = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isExporting = false
+    }
+
+    /// Читает выбранный пользователем файл экспорта и загружает его на
+    /// backend — найденные в нём ресурсы добавляются/обновляются в текущем
+    /// каталоге (см. POST /api/hiring-resources/import).
+    func importResources(from url: URL) async {
+        isImporting = true
+        errorMessage = nil
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            let result = try await client.importHiringResources(fileData: data)
+            importResultMessage = "Импортировано: \(result.total), новых: \(result.created), обновлено: \(result.updated)"
+                + (result.errors.isEmpty ? "" : "\nОшибки: \(result.errors.joined(separator: "; "))")
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isImporting = false
     }
 
     var statusBarText: String? {
