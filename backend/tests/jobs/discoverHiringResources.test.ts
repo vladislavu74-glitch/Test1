@@ -136,6 +136,24 @@ describe('startHiringResourceDiscovery', () => {
     expect(untouched?.isStale).toBe(false);
   });
 
+  it('never marks a scanConfig-backed resource (seeded connector) stale, even if the AI run does not reconfirm it', async () => {
+    await prisma.hiringResource.create({
+      data: {
+        name: 'hh.ru — Россия', url: 'https://hh.ru/', category: 'job_board', status: 'confirmed',
+        evidenceSummary: 'x', evidenceUrl: 'https://hh.ru/',
+        scanConfig: JSON.stringify({ connector: 'headhunter', areaId: 113 }),
+      },
+    });
+
+    mockAgentReporting([]); // агент не ищет и не переподтверждает hh.ru — он заведён статически
+
+    const run = await startHiringResourceDiscovery({ categories: ['job_board'] });
+    await waitForRunDone(run.runId);
+
+    const stillFresh = await prisma.hiringResource.findUnique({ where: { url: 'https://hh.ru/' } });
+    expect(stillFresh?.isStale).toBe(false);
+  });
+
   it('persists each resource as soon as it is reported, before the run finishes', async () => {
     let resolveSecond: () => void = () => {};
     const secondReported = new Promise<void>((resolve) => { resolveSecond = resolve; });

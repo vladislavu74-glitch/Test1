@@ -233,11 +233,19 @@ async function processRun(runId: string, params: HiringResourceRunParams, assump
     // запуска, которые не подтвердились повторно — "перестали откликаться
     // при поиске". Исключённые (status="excluded") не трогаем: они не
     // "устарели", они просто не подошли по критериям при прошлой проверке.
+    // Технические источники со scanConfig (hh.ru, SuperJob, Habr Career,
+    // ATS-борды, RSS) тоже не трогаем: их заводят статически (seed.ts) или
+    // вручную, а не через этот ИИ-поиск — агент никогда не "находит" их
+    // заново через web_search, поэтому без этого исключения они помечались
+    // бы устаревшими после любого запуска, включающего их категорию, хотя
+    // реально продолжают работать (их актуальность проверяется самим сканом
+    // вакансий, а не переподтверждением через поиск источников).
     await prisma.hiringResource.updateMany({
       where: {
         category: { in: params.categories },
         status: { not: 'excluded' },
         url: { notIn: Array.from(seenUrls) },
+        scanConfig: null,
       },
       data: { isStale: true },
     });
