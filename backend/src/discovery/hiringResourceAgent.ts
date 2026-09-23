@@ -5,6 +5,7 @@
 // поисковой выдачи — раздел 3 требует именно это перед подтверждением ресурса).
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config';
+import { createAnthropicClient } from './anthropicClient';
 import {
   CATEGORY_LABELS,
   type HiringResourceCandidate,
@@ -188,7 +189,7 @@ export async function searchHiringResources(
     throw new Error('ANTHROPIC_API_KEY не настроен — поиск ресурсов найма недоступен');
   }
 
-  const client = new Anthropic({ apiKey: config.anthropicApiKey });
+  const client = createAnthropicClient();
 
   const messages: Anthropic.MessageParam[] = [
     { role: 'user', content: buildUserPrompt(params, assumptions) },

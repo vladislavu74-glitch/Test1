@@ -17,6 +17,11 @@ export const config = {
   // src/discovery/aiSourceSearchAgent.ts) — без ключа этот функционал
   // просто недоступен, остальной backend работает как обычно.
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+  // Anthropic API недоступен напрямую с российских IP (гео-ограничение на
+  // стороне Anthropic, а не проблема ключа) — на сервере с российским IP
+  // сюда указывается адрес SOCKS5-релея на сервере в другой юрисдикции
+  // (например socks5://user:pass@1.2.3.4:11080). Пусто — прямое подключение.
+  anthropicProxyUrl: process.env.ANTHROPIC_PROXY_URL ?? '',
   // Без верифицированного домена в Resend отправлять с этого адреса можно
   // только на email, на который зарегистрирован сам аккаунт Resend — см.
   // src/mail/mailer.ts и backend/README.md.

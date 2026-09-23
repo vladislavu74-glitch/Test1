@@ -30,8 +30,21 @@ curl -H "Authorization: Bearer <API_AUTH_TOKEN из .env>" http://localhost:4000
 | `SUPERJOB_API_KEY` | ключ приложения SuperJob (зарегистрировать на api.superjob.ru) |
 | `RESEND_API_KEY` | ключ Resend (resend.com/api-keys) для отправки email-дайджеста |
 | `MAIL_FROM` / `MAIL_TO` | отправитель и получатель дайджеста (по умолчанию `vladislav.u74@gmail.com`) |
+| `ANTHROPIC_API_KEY` | ключ Anthropic (console.anthropic.com/settings/keys) — нужен ИИ-агентам поиска источников вакансий и ресурсов найма (`src/discovery/*Agent.ts`) |
+| `ANTHROPIC_PROXY_URL` | см. ниже — обязателен, если backend развёрнут на сервере с российским IP |
 | `CRON_TZ` | таймзона ежедневного скана в 10:00 (по умолчанию `Europe/Moscow`) |
 | `PORT` | порт HTTP-сервера |
+
+### Anthropic API и российские IP
+
+Anthropic API возвращает `403 Request not allowed` на ЛЮБОЙ запрос (не
+только с `web_search`/`web_fetch`) с российских IP-адресов — это
+гео-ограничение на стороне Anthropic, не проблема ключа или кода. Если
+backend развёрнут на сервере с российским IP (как текущий продакшн),
+задайте `ANTHROPIC_PROXY_URL="socks5://user:pass@host:port"` — адрес
+SOCKS5-прокси на сервере в другой юрисдикции. `src/discovery/anthropicClient.ts`
+заворачивает через него только вызовы Anthropic API, остального трафика
+backend'а (hh.ru, SuperJob, Resend и т.п.) это не касается.
 
 Письма уходят через [Resend](https://resend.com) — HTTP API поверх порта
 443, а не прямой SMTP: многие VPS блокируют исходящие SMTP-порты

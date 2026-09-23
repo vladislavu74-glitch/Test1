@@ -8,6 +8,7 @@
 // активным источником.
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config';
+import { createAnthropicClient } from './anthropicClient';
 
 export interface AiFoundSource {
   name: string;
@@ -109,7 +110,7 @@ export async function searchForVacancySources(params: {
     throw new Error('ANTHROPIC_API_KEY не настроен — ИИ-поиск источников недоступен');
   }
 
-  const client = new Anthropic({ apiKey: config.anthropicApiKey });
+  const client = createAnthropicClient();
 
   const messages: Anthropic.MessageParam[] = [
     { role: 'user', content: buildUserPrompt(params.jobTitles, params.countries, params.cities) },
