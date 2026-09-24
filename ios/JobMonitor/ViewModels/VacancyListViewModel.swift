@@ -23,17 +23,32 @@ final class VacancyListViewModel: ObservableObject {
         }
     }
 
+    /// Показывает локально сохранённый список сразу же (см. DiskCache), не
+    /// дожидаясь ответа backend'а — VPS отвечает не мгновенно, и держать
+    /// пустой экран/спиннер на это время незачем, если у нас уже есть, что
+    /// показать с прошлого раза. Свежие данные подменяют список и кэш, как
+    /// только приходят; если запрос не удался, а кэш уже показан — не пугаем
+    /// ошибкой поверх того, что и так видно, просто оставляем как есть.
     func load() async {
+        if vacancies.isEmpty, let cached = DiskCache.load([Vacancy].self, key: cacheKey(for: filter)) {
+            vacancies = cached
+        }
         isLoading = true
         errorMessage = nil
         do {
-            vacancies = try await client.fetchVacancies(filter: filter)
+            let fresh = try await client.fetchVacancies(filter: filter)
+            vacancies = fresh
+            DiskCache.save(fresh, key: cacheKey(for: filter))
         } catch {
-            errorMessage = error.localizedDescription
+            if vacancies.isEmpty {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
         await badge.refresh()
     }
+
+    private func cacheKey(for filter: VacancyFilter) -> String { "vacancies_\(filter.rawValue)" }
 
     /// Вызывается при открытии вакансии (тап по названию/кнопке) — снимает
     /// значок "Новое" именно с неё, не трогая остальной список.

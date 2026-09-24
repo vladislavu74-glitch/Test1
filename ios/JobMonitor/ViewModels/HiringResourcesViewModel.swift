@@ -49,19 +49,37 @@ final class HiringResourcesViewModel: ObservableObject {
 
     var isRunning: Bool { currentRun?.isRunning ?? false }
 
+    /// Показывает локально сохранённый список сразу же (см. DiskCache), не
+    /// дожидаясь ответа backend'а — VPS отвечает не мгновенно, и держать
+    /// пустой экран/спиннер на это время незачем, если у нас уже есть, что
+    /// показать с прошлого раза. Свежие данные подменяют список и кэш, как
+    /// только приходят; если запрос не удался, а кэш уже показан — не пугаем
+    /// ошибкой поверх того, что и так видно, просто оставляем как есть.
     func load() async {
+        let key = cacheKey()
+        if resources.isEmpty, let cached = DiskCache.load([HiringResource].self, key: key) {
+            resources = cached
+        }
         isLoading = true
         errorMessage = nil
         do {
-            resources = try await client.fetchHiringResources(filter: .init(
+            let fresh = try await client.fetchHiringResources(filter: .init(
                 category: categoryFilter?.rawValue,
                 status: statusFilter,
                 minScore: nil
             ))
+            resources = fresh
+            DiskCache.save(fresh, key: key)
         } catch {
-            errorMessage = error.localizedDescription
+            if resources.isEmpty {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
+    }
+
+    private func cacheKey() -> String {
+        "hiring_resources_\(categoryFilter?.rawValue ?? "all")_\(statusFilter ?? "all")"
     }
 
     func markAllSeen() async {
